@@ -1,0 +1,53 @@
+# CostGuard — .cursorrules
+
+## Project
+CostGuard: Real-time AI/cloud spend monitoring SaaS with automated kill switches.
+Stack: Next.js 14 (App Router) + TypeScript + Supabase + Prisma + Upstash Redis/QStash + Stripe.
+
+## Hard Rules
+
+### Security — NEVER violate
+- NEVER log, return, or expose `encryptedCreds` or decrypted credentials in API responses
+- ALWAYS verify Supabase session before any DB operation in API routes
+- ALWAYS validate that platform.userId === authenticated user.id before any mutation
+- NEVER store plaintext API keys anywhere — always use `encrypt()` from `src/lib/crypto.ts`
+- QStash webhook MUST verify signature using `@upstash/qstash` Receiver before processing
+
+### Code Style
+- TypeScript strict mode — no `any` except in adapter rawResponse fields
+- All async functions must have try/catch or use `withRetry()`
+- No default exports except Next.js pages and layout files
+- Zod validation on ALL API route inputs
+- Prisma transactions for any multi-table write
+
+### Architecture
+- Business logic lives ONLY in `src/modules/` — never in API routes or components
+- API routes are thin: auth check → call module function → return response
+- Each adapter implements `PlatformAdapter` interface from `base.adapter.ts`
+- Adding a new platform = create one adapter file + register in `adapter-factory.ts` — nothing else changes
+- Redis is for speed (latest readings, locks, windows) — Postgres is source of truth
+
+### UI
+- All colors via CSS variables (`--kill`, `--safe`, `--warn`, `--cyan`, `--text`, `--muted`)
+- Status colors: CLOSED=safe green, OPEN=kill red, HALF_OPEN=warn yellow
+- Distance-to-threshold gauge is THE hero component — always visible on dashboard
+- No toast for successful background operations — only for user-triggered actions
+- Loading states on ALL async operations
+
+### Testing
+- Every algorithm in `src/modules/circuit-breaker/` must have a Vitest unit test
+- Kill switch flow must have a Playwright E2E test
+- Run `npm test` before any commit
+
+## File Headers
+Every new file starts with:
+```typescript
+// src/modules/[module]/[file].ts
+// CostGuard — [one-line description]
+```
+
+## Commit Convention
+feat: implement OpenAI adapter
+fix: circuit breaker half-open window
+test: burn rate sliding window edge cases
+refactor: extract alert dispatcher

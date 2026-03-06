@@ -1,0 +1,1965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CostGuard — Cost Control Command</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600;700;800;900&family=Barlow+Condensed:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --void:#03030A;--deep:#07070F;--dark:#0D0D1A;--surface:#111122;
+  --panel:#14142A;--border:#1C1C38;--border2:#252545;
+  --kill:#FF1A2E;--kill2:#CC0F20;--kill-glow:rgba(255,26,46,0.4);
+  --safe:#00FF6A;--safe2:#00CC55;--safe-glow:rgba(0,255,106,0.3);
+  --warn:#FFB800;--warn2:#CC9200;--warn-glow:rgba(255,184,0,0.3);
+  --cyan:#00E5FF;--cyan2:#00B8CC;
+  --text:#E0E0FF;--muted:#5A5A88;--muted2:#3A3A60;
+  --font-display:'Barlow Condensed',sans-serif;
+  --font-body:'Barlow',sans-serif;
+  --font-mono:'Share Tech Mono',monospace;
+}
+
+/* ── LIGHT THEME ───────────────────────────── */
+html[data-theme="light"]{
+  --void:#F0F0F8;--deep:#E8E8F4;--dark:#DFE0EE;--surface:#FFFFFF;
+  --panel:#F5F5FC;--border:#D8D8EC;--border2:#C8C8E0;
+  --kill:#D4001F;--kill2:#A8001A;--kill-glow:rgba(212,0,31,0.25);
+  --safe:#007A3D;--safe2:#005C2E;--safe-glow:rgba(0,122,61,0.2);
+  --warn:#B87800;--warn2:#8C5C00;--warn-glow:rgba(184,120,0,0.2);
+  --cyan:#006B8F;--cyan2:#005070;
+  --text:#12122A;--muted:#606080;--muted2:#9898B8;
+}
+html[data-theme="light"] body{background:var(--void);}
+html[data-theme="light"] body::before{background:none;}
+html[data-theme="light"] body::after{opacity:0.15;}
+html[data-theme="light"] .sidebar{background:var(--deep);box-shadow:2px 0 12px rgba(0,0,0,0.06);}
+html[data-theme="light"] .topbar{background:rgba(240,240,248,0.95);box-shadow:0 1px 0 var(--border);}
+html[data-theme="light"] .metric-card{box-shadow:0 2px 12px rgba(0,0,0,0.05);}
+html[data-theme="light"] .platform-card{box-shadow:0 2px 8px rgba(0,0,0,0.04);}
+html[data-theme="light"] .kill-panel{box-shadow:0 2px 12px rgba(0,0,0,0.05);}
+html[data-theme="light"] .feed-item{box-shadow:0 1px 4px rgba(0,0,0,0.04);}
+html[data-theme="light"] .chart-section{box-shadow:0 2px 12px rgba(0,0,0,0.05);}
+html[data-theme="light"] .modal{box-shadow:0 20px 60px rgba(0,0,0,0.15);}
+html[data-theme="light"] .toast{box-shadow:0 8px 32px rgba(0,0,0,0.12);}
+html[data-theme="light"] .glow-red{text-shadow:0 0 12px rgba(212,0,31,0.3);}
+html[data-theme="light"] .glow-green{text-shadow:0 0 12px rgba(0,122,61,0.3);}
+html[data-theme="light"] #cursor::before{border-color:var(--cyan);}
+html[data-theme="light"] #cursor::after{background:var(--cyan);}
+html[data-theme="light"] .code{background:#EEEEF8;}
+html[data-theme="light"] .mc-bg-num{color:rgba(0,0,0,0.03);}
+
+/* THEME TOGGLE BUTTON */
+.theme-toggle{
+  display:flex;align-items:center;gap:0;
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:20px;padding:3px;cursor:pointer;
+  transition:all 0.25s;flex-shrink:0;
+}
+.theme-toggle:hover{border-color:var(--border2);}
+.tt-option{
+  display:flex;align-items:center;gap:5px;
+  padding:5px 11px;border-radius:16px;
+  font-family:var(--font-mono);font-size:10px;font-weight:600;
+  letter-spacing:0.5px;text-transform:uppercase;
+  color:var(--muted);transition:all 0.2s;white-space:nowrap;
+  cursor:pointer;border:none;background:transparent;
+}
+.tt-option.active{
+  background:var(--surface);color:var(--text);
+  box-shadow:0 1px 4px rgba(0,0,0,0.15);
+}
+html[data-theme="light"] .tt-option.active{
+  box-shadow:0 1px 6px rgba(0,0,0,0.12);
+}
+.tt-icon{font-size:12px;}
+
+html{scroll-behavior:smooth;}
+body{font-family:var(--font-body);background:var(--void);color:var(--text);min-height:100vh;overflow-x:hidden;cursor:none;transition:background 0.3s,color 0.3s;}
+
+/* CUSTOM CURSOR */
+#cursor{position:fixed;width:20px;height:20px;pointer-events:none;z-index:9999;transition:transform 0.1s;}
+#cursor::before{content:'';position:absolute;inset:0;border:1.5px solid var(--cyan);border-radius:50%;transition:all 0.15s;}
+#cursor::after{content:'';position:absolute;top:50%;left:50%;width:4px;height:4px;background:var(--cyan);border-radius:50%;transform:translate(-50%,-50%);}
+#cursor.kill-mode::before{border-color:var(--kill);box-shadow:0 0 12px var(--kill-glow);}
+#cursor.kill-mode::after{background:var(--kill);}
+#cursor-dot{position:fixed;width:40px;height:40px;pointer-events:none;z-index:9998;margin:-20px 0 0 -20px;border:1px solid rgba(0,229,255,0.2);border-radius:50%;transition:transform 0.3s cubic-bezier(0.23,1,0.32,1);}
+
+/* NOISE TEXTURE */
+body::after{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");pointer-events:none;z-index:9997;opacity:0.4;}
+
+/* SCANLINES */
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,20,0.08) 3px,rgba(0,0,20,0.08) 4px);pointer-events:none;z-index:9996;}
+
+/* SIDEBAR */
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:64px;background:var(--deep);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:20px 0;z-index:200;transition:width 0.3s cubic-bezier(0.23,1,0.32,1);}
+.sidebar:hover{width:200px;}
+.sidebar-logo{width:36px;height:36px;background:var(--kill);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:white;font-family:var(--font-display);letter-spacing:-1px;flex-shrink:0;box-shadow:0 0 20px var(--kill-glow);}
+.sidebar-logo-text{font-size:14px;font-weight:800;color:var(--text);font-family:var(--font-display);letter-spacing:2px;text-transform:uppercase;opacity:0;white-space:nowrap;margin-left:10px;transition:opacity 0.2s;}
+.sidebar:hover .sidebar-logo-text{opacity:1;}
+.logo-row{display:flex;align-items:center;margin-bottom:32px;}
+.nav-items{display:flex;flex-direction:column;gap:4px;width:100%;padding:0 10px;}
+.nav-btn{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:all 0.2s;border:none;background:transparent;color:var(--muted);width:100%;overflow:hidden;}
+.nav-btn:hover{background:rgba(255,255,255,0.05);color:var(--text);}
+.nav-btn.active{background:rgba(255,26,46,0.1);color:var(--kill);border:1px solid rgba(255,26,46,0.2);}
+.nav-icon{font-size:18px;flex-shrink:0;width:20px;text-align:center;}
+.nav-label{font-size:12px;font-weight:600;font-family:var(--font-display);letter-spacing:1px;text-transform:uppercase;white-space:nowrap;opacity:0;transition:opacity 0.2s;}
+.sidebar:hover .nav-label{opacity:1;}
+.nav-spacer{flex:1;}
+.status-indicator{width:8px;height:8px;border-radius:50%;background:var(--safe);box-shadow:0 0 8px var(--safe-glow);animation:pulse-safe 2s infinite;}
+@keyframes pulse-safe{0%,100%{opacity:1;}50%{opacity:0.4;}}
+
+/* MAIN */
+.main{margin-left:64px;min-height:100vh;display:flex;flex-direction:column;}
+
+/* TOP BAR */
+.topbar{position:sticky;top:0;z-index:100;background:rgba(3,3,10,0.9);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 32px;height:56px;display:flex;align-items:center;justify-content:space-between;}
+.topbar-left{display:flex;align-items:center;gap:20px;}
+.page-title{font-family:var(--font-display);font-size:22px;font-weight:700;letter-spacing:2px;text-transform:uppercase;}
+.system-status{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:11px;color:var(--safe);background:rgba(0,255,106,0.05);border:1px solid rgba(0,255,106,0.15);padding:4px 12px;border-radius:3px;}
+.topbar-right{display:flex;align-items:center;gap:16px;}
+.topbar-clock{font-family:var(--font-mono);font-size:13px;color:var(--muted);}
+.topbar-meta{font-family:var(--font-mono);font-size:11px;color:var(--muted2);}
+.alert-badge{background:rgba(255,26,46,0.1);border:1px solid rgba(255,26,46,0.3);color:var(--kill);padding:4px 10px;border-radius:3px;font-family:var(--font-mono);font-size:11px;cursor:pointer;transition:all 0.2s;}
+.alert-badge:hover{background:rgba(255,26,46,0.2);}
+
+/* CONTENT */
+.content{padding:24px 32px;display:grid;grid-template-columns:1fr 1fr 1fr 340px;grid-template-rows:auto auto auto;gap:20px;flex:1;}
+
+/* METRIC CARDS */
+.metric-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;position:relative;overflow:hidden;transition:border-color 0.3s,box-shadow 0.3s;}
+.metric-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.02) 0%,transparent 60%);pointer-events:none;}
+.metric-card.warn{border-color:rgba(255,184,0,0.3);box-shadow:0 0 30px rgba(255,184,0,0.05);}
+.metric-card.danger{border-color:rgba(255,26,46,0.4);box-shadow:0 0 30px rgba(255,26,46,0.08);animation:danger-pulse 1.5s infinite;}
+@keyframes danger-pulse{0%,100%{box-shadow:0 0 20px rgba(255,26,46,0.08);}50%{box-shadow:0 0 40px rgba(255,26,46,0.18);}}
+.mc-label{font-family:var(--font-mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;}
+.mc-value{font-family:var(--font-display);font-size:36px;font-weight:800;letter-spacing:-1px;line-height:1;}
+.mc-sub{font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:8px;}
+.mc-delta{font-size:11px;font-family:var(--font-mono);padding:2px 6px;border-radius:2px;}
+.mc-delta.up{color:var(--kill);background:rgba(255,26,46,0.1);}
+.mc-delta.down{color:var(--safe);background:rgba(0,255,106,0.08);}
+.mc-bg-num{position:absolute;right:-10px;bottom:-10px;font-family:var(--font-display);font-size:80px;font-weight:900;color:rgba(255,255,255,0.02);line-height:1;pointer-events:none;user-select:none;}
+
+/* SPARK LINE */
+.sparkline{margin-top:12px;height:32px;position:relative;}
+.sparkline svg{width:100%;height:100%;}
+
+/* PLATFORM GRID */
+.platforms-section{grid-column:1/4;grid-row:2;}
+.section-title{font-family:var(--font-display);font-size:13px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:10px;}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+.platforms-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+
+/* PLATFORM CARD */
+.platform-card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;position:relative;overflow:hidden;cursor:pointer;transition:all 0.25s cubic-bezier(0.23,1,0.32,1);}
+.platform-card::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.025),transparent);pointer-events:none;border-radius:10px;}
+.platform-card:hover{transform:translateY(-2px);border-color:var(--border2);}
+.platform-card.status-safe{border-left:3px solid var(--safe);}
+.platform-card.status-warn{border-left:3px solid var(--warn);background:rgba(255,184,0,0.02);}
+.platform-card.status-danger{border-left:3px solid var(--kill);background:rgba(255,26,46,0.03);animation:card-danger 2s infinite;}
+.platform-card.status-killed{border-left:3px solid var(--muted2);opacity:0.7;}
+@keyframes card-danger{0%,100%{background:rgba(255,26,46,0.02);}50%{background:rgba(255,26,46,0.05);}}
+.pc-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.pc-platform{display:flex;align-items:center;gap:10px;}
+.pc-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.pc-name{font-family:var(--font-display);font-size:15px;font-weight:700;letter-spacing:0.5px;}
+.pc-env{font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:1px;}
+.pc-state{font-family:var(--font-mono);font-size:9px;font-weight:700;padding:3px 7px;border-radius:2px;letter-spacing:1px;text-transform:uppercase;}
+.state-safe{color:var(--safe);background:rgba(0,255,106,0.08);border:1px solid rgba(0,255,106,0.15);}
+.state-warn{color:var(--warn);background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.2);}
+.state-danger{color:var(--kill);background:rgba(255,26,46,0.08);border:1px solid rgba(255,26,46,0.2);animation:blink-danger 0.8s infinite;}
+.state-killed{color:var(--muted);background:rgba(90,90,136,0.1);border:1px solid rgba(90,90,136,0.2);}
+@keyframes blink-danger{0%,100%{opacity:1;}50%{opacity:0.5;}}
+
+/* DISTANCE TO THRESHOLD — THE HERO ELEMENT */
+.threshold-gauge{margin:14px 0 10px;}
+.tg-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.tg-label{font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;}
+.tg-distance{font-family:var(--font-mono);font-size:11px;font-weight:700;}
+.tg-track{height:6px;background:var(--border);border-radius:3px;position:relative;overflow:hidden;}
+.tg-fill{height:100%;border-radius:3px;transition:width 1.2s cubic-bezier(0.23,1,0.32,1);position:relative;}
+.tg-fill::after{content:'';position:absolute;right:0;top:0;bottom:0;width:3px;filter:blur(2px);border-radius:3px;}
+.tg-fill.safe{background:linear-gradient(90deg,rgba(0,255,106,0.4),var(--safe));}
+.tg-fill.safe::after{background:var(--safe);}
+.tg-fill.warn{background:linear-gradient(90deg,rgba(255,184,0,0.4),var(--warn));}
+.tg-fill.warn::after{background:var(--warn);}
+.tg-fill.danger{background:linear-gradient(90deg,rgba(255,26,46,0.5),var(--kill));animation:fill-danger 0.5s infinite alternate;}
+.tg-fill.danger::after{background:var(--kill);box-shadow:0 0 8px var(--kill);}
+@keyframes fill-danger{from{opacity:0.8;}to{opacity:1;}}
+.tg-marker{position:absolute;right:0;top:-4px;width:1px;height:14px;background:rgba(255,255,255,0.3);}
+
+/* BURN RATE */
+.pc-burn{display:flex;align-items:baseline;gap:6px;}
+.pc-burn-value{font-family:var(--font-display);font-size:24px;font-weight:800;letter-spacing:-0.5px;}
+.pc-burn-unit{font-family:var(--font-mono);font-size:10px;color:var(--muted);}
+.pc-trend{font-family:var(--font-mono);font-size:10px;display:flex;align-items:center;gap:4px;margin-top:4px;}
+
+/* KILL SWITCH PANEL */
+.kill-panel{grid-column:4;grid-row:1/4;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:20px;position:relative;overflow:hidden;}
+.kill-panel::before{content:'';position:absolute;top:-100px;right:-100px;width:300px;height:300px;background:radial-gradient(circle,rgba(255,26,46,0.04),transparent 70%);pointer-events:none;}
+
+/* BIG KILL SWITCH */
+.kill-switch-visual{display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px 0;}
+.kill-ring-outer{position:relative;width:160px;height:160px;}
+.kill-ring-svg{width:160px;height:160px;transform:rotate(-90deg);}
+.kill-ring-bg{fill:none;stroke:var(--border);stroke-width:6;}
+.kill-ring-fill{fill:none;stroke-width:6;stroke-linecap:round;transition:stroke-dashoffset 1.5s cubic-bezier(0.23,1,0.32,1),stroke 0.5s;}
+.kill-ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;}
+.krc-value{font-family:var(--font-display);font-size:26px;font-weight:900;letter-spacing:-1px;line-height:1;}
+.krc-label{font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.krc-sublabel{font-family:var(--font-mono);font-size:8px;color:var(--muted2);}
+
+/* BLAST RADIUS */
+.blast-radius{position:relative;padding:16px;background:var(--panel);border:1px solid var(--border);border-radius:8px;}
+.br-title{font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;}
+.br-visual{display:flex;align-items:center;justify-content:center;position:relative;height:80px;}
+.br-rings{position:relative;width:80px;height:80px;}
+.br-ring{position:absolute;border-radius:50%;border:1px solid;animation:expand-ring 2s infinite;}
+.br-ring:nth-child(1){inset:30px;border-color:rgba(255,26,46,0.8);}
+.br-ring:nth-child(2){inset:20px;border-color:rgba(255,26,46,0.4);animation-delay:0.4s;}
+.br-ring:nth-child(3){inset:10px;border-color:rgba(255,26,46,0.2);animation-delay:0.8s;}
+.br-ring:nth-child(4){inset:0;border-color:rgba(255,26,46,0.1);animation-delay:1.2s;}
+@keyframes expand-ring{0%{transform:scale(0.8);opacity:1;}100%{transform:scale(1.2);opacity:0;}}
+.br-dot{position:absolute;inset:0;margin:auto;width:10px;height:10px;background:var(--kill);border-radius:50%;box-shadow:0 0 15px var(--kill-glow);}
+.br-amount{font-family:var(--font-display);font-size:28px;font-weight:900;color:var(--kill);letter-spacing:-1px;}
+.br-label{font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:2px;}
+
+/* KILL BUTTON */
+.kill-btn{position:relative;width:100%;padding:16px;border:none;border-radius:8px;font-family:var(--font-display);font-size:16px;font-weight:800;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all 0.2s;overflow:hidden;}
+.kill-btn-armed{background:linear-gradient(135deg,var(--kill2),var(--kill));color:white;box-shadow:0 4px 30px rgba(255,26,46,0.4);}
+.kill-btn-armed:hover{box-shadow:0 6px 40px rgba(255,26,46,0.6);transform:translateY(-1px);}
+.kill-btn-armed::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,0.1),transparent);pointer-events:none;}
+.kill-btn-armed:active{transform:scale(0.98);box-shadow:0 2px 20px rgba(255,26,46,0.5);}
+.kill-btn-safe{background:rgba(0,255,106,0.08);color:var(--safe);border:1px solid rgba(0,255,106,0.2);}
+.kill-btn-safe:hover{background:rgba(0,255,106,0.12);}
+.kill-btn-dead{background:rgba(90,90,136,0.1);color:var(--muted);border:1px solid var(--border);cursor:not-allowed;}
+.kb-ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,0.15);transform:scale(0);animation:ripple 0.6s linear;}
+@keyframes ripple{to{transform:scale(4);opacity:0;}}
+
+/* DISTANCE COUNTDOWN */
+.distance-countdown{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;}
+.dc-title{font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+.dc-items{display:flex;flex-direction:column;gap:8px;}
+.dc-item{display:flex;align-items:center;justify-content:space-between;}
+.dc-platform{font-family:var(--font-mono);font-size:10px;color:var(--muted);}
+.dc-bar-wrap{flex:1;margin:0 10px;height:3px;background:var(--border);border-radius:2px;overflow:hidden;}
+.dc-bar-fill{height:100%;border-radius:2px;transition:width 1s ease;}
+.dc-pct{font-family:var(--font-mono);font-size:10px;font-weight:700;}
+
+/* ACTIVITY FEED */
+.activity-feed{grid-column:1/4;grid-row:3;}
+.feed-items{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;}
+.feed-items::-webkit-scrollbar{width:3px;}
+.feed-items::-webkit-scrollbar-track{background:var(--border);}
+.feed-items::-webkit-scrollbar-thumb{background:var(--muted2);border-radius:2px;}
+.feed-item{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:11px;transition:all 0.2s;animation:slide-in 0.4s cubic-bezier(0.23,1,0.32,1);}
+@keyframes slide-in{from{opacity:0;transform:translateX(-10px);}to{opacity:1;transform:translateX(0);}}
+.feed-item:hover{border-color:var(--border2);}
+.fi-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.fi-time{color:var(--muted2);min-width:60px;}
+.fi-platform{color:var(--muted);min-width:90px;}
+.fi-msg{color:var(--text);flex:1;}
+.fi-amount{text-align:right;min-width:70px;}
+
+/* EMPTY STATE */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 40px;text-align:center;background:var(--panel);border:1px dashed var(--border2);border-radius:12px;}
+.empty-orbit{position:relative;width:120px;height:120px;margin-bottom:28px;}
+.empty-orbit-ring{position:absolute;border-radius:50%;border:1px solid var(--border2);}
+.empty-orbit-ring:nth-child(1){inset:0;animation:orbit-rotate 8s linear infinite;}
+.empty-orbit-ring:nth-child(2){inset:20px;animation:orbit-rotate 5s linear infinite reverse;border-style:dashed;}
+.empty-orbit-ring:nth-child(3){inset:40px;animation:orbit-rotate 3s linear infinite;}
+.empty-orbit-dot{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--muted2);top:0;left:50%;transform:translateX(-50%);}
+.empty-orbit-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:28px;}
+@keyframes orbit-rotate{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+.empty-title{font-family:var(--font-display);font-size:20px;font-weight:700;letter-spacing:1px;margin-bottom:8px;}
+.empty-desc{font-family:var(--font-body);font-size:13px;color:var(--muted);max-width:280px;line-height:1.6;}
+.empty-btn{margin-top:20px;padding:10px 24px;background:rgba(255,26,46,0.1);border:1px solid rgba(255,26,46,0.25);color:var(--kill);border-radius:6px;font-family:var(--font-display);font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all 0.2s;}
+.empty-btn:hover{background:rgba(255,26,46,0.18);}
+
+/* CHART AREA */
+.chart-section{grid-column:1/4;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;overflow:hidden;}
+.chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.chart-tabs{display:flex;gap:4px;}
+.chart-tab{padding:5px 12px;border-radius:4px;font-family:var(--font-mono);font-size:10px;cursor:pointer;transition:all 0.2s;border:1px solid transparent;color:var(--muted);}
+.chart-tab.active{background:rgba(255,26,46,0.1);border-color:rgba(255,26,46,0.25);color:var(--kill);}
+.chart-tab:hover:not(.active){color:var(--text);}
+.chart-canvas{position:relative;height:140px;overflow:hidden;}
+canvas#mainChart{width:100%;height:140px;}
+
+/* INCIDENT MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(3,3,10,0.85);backdrop-filter:blur(12px);z-index:1000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.3s;}
+.modal-overlay.open{opacity:1;pointer-events:all;}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:500px;max-width:95vw;padding:32px;position:relative;transform:translateY(20px) scale(0.97);transition:transform 0.3s cubic-bezier(0.23,1,0.32,1);}
+.modal-overlay.open .modal{transform:translateY(0) scale(1);}
+.modal-close{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:4px;transition:color 0.2s;}
+.modal-close:hover{color:var(--text);}
+.modal-title{font-family:var(--font-display);font-size:20px;font-weight:800;letter-spacing:1px;margin-bottom:6px;text-transform:uppercase;}
+.modal-sub{font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-bottom:24px;}
+
+/* CONNECT WIZARD */
+.wizard-steps{display:flex;align-items:center;gap:8px;margin-bottom:28px;}
+.ws-step{display:flex;align-items:center;gap:6px;}
+.ws-dot{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:10px;color:var(--muted);transition:all 0.3s;}
+.ws-dot.active{border-color:var(--kill);background:rgba(255,26,46,0.1);color:var(--kill);}
+.ws-dot.done{border-color:var(--safe);background:rgba(0,255,106,0.1);color:var(--safe);}
+.ws-line{flex:1;height:1px;background:var(--border);}
+.form-group{margin-bottom:16px;}
+.form-label{font-family:var(--font-mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;display:block;}
+.form-input{width:100%;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-family:var(--font-mono);font-size:12px;color:var(--text);outline:none;transition:border-color 0.2s;}
+.form-input:focus{border-color:rgba(255,26,46,0.4);}
+.form-input::placeholder{color:var(--muted2);}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.modal-actions{display:flex;gap:10px;margin-top:24px;}
+.btn-primary{flex:1;padding:12px;background:linear-gradient(135deg,var(--kill2),var(--kill));border:none;border-radius:6px;font-family:var(--font-display);font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:white;cursor:pointer;transition:all 0.2s;}
+.btn-primary:hover{box-shadow:0 4px 20px rgba(255,26,46,0.4);}
+.btn-secondary{padding:12px 20px;background:transparent;border:1px solid var(--border);border-radius:6px;font-family:var(--font-display);font-size:13px;font-weight:600;letter-spacing:1px;color:var(--muted);cursor:pointer;transition:all 0.2s;}
+.btn-secondary:hover{border-color:var(--border2);color:var(--text);}
+
+/* KILL CONFIRM MODAL */
+.kill-confirm-content{text-align:center;padding:10px 0;}
+.kill-warning-icon{font-size:48px;margin-bottom:16px;animation:shake 0.5s ease-in-out;}
+@keyframes shake{0%,100%{transform:rotate(0);}25%{transform:rotate(-5deg);}75%{transform:rotate(5deg);}}
+.kill-countdown{font-family:var(--font-display);font-size:64px;font-weight:900;color:var(--kill);letter-spacing:-2px;line-height:1;margin:16px 0;}
+.kill-countdown-label{font-family:var(--font-mono);font-size:11px;color:var(--muted);}
+.kill-progress-wrap{margin:20px 0;height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
+.kill-progress-fill{height:100%;background:var(--kill);border-radius:2px;transition:width 0.05s linear;box-shadow:0 0 8px var(--kill-glow);}
+
+/* TOAST */
+.toast-container{position:fixed;top:70px;right:24px;z-index:2000;display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 18px;display:flex;align-items:center;gap:12px;min-width:300px;font-family:var(--font-mono);font-size:12px;animation:toast-in 0.4s cubic-bezier(0.23,1,0.32,1);box-shadow:0 8px 32px rgba(0,0,0,0.5);}
+@keyframes toast-in{from{opacity:0;transform:translateX(20px);}to{opacity:1;transform:translateX(0);}}
+.toast.kill{border-left:3px solid var(--kill);}
+.toast.safe{border-left:3px solid var(--safe);}
+.toast.warn{border-left:3px solid var(--warn);}
+.toast-icon{font-size:16px;}
+.toast-msg{flex:1;color:var(--text);}
+.toast-time{color:var(--muted2);font-size:10px;}
+
+/* NUMERIC TICKER */
+.ticker{display:inline-block;transition:all 0.3s;}
+
+/* GLOW EFFECTS */
+.glow-red{text-shadow:0 0 20px rgba(255,26,46,0.5);}
+.glow-green{text-shadow:0 0 20px rgba(0,255,106,0.4);}
+.glow-yellow{text-shadow:0 0 20px rgba(255,184,0,0.4);}
+
+/* CORNER ACCENTS */
+.corner-accent{position:relative;}
+.corner-accent::before,.corner-accent::after{content:'';position:absolute;width:8px;height:8px;}
+.corner-accent::before{top:-1px;left:-1px;border-top:2px solid var(--kill);border-left:2px solid var(--kill);}
+.corner-accent::after{bottom:-1px;right:-1px;border-bottom:2px solid var(--kill);border-right:2px solid var(--kill);}
+
+/* ── PAGE SECTIONS ─────────────────────────── */
+.page-section{display:none;padding:24px 32px;flex:1;animation:page-in 0.25s cubic-bezier(0.23,1,0.32,1);}
+.page-section.active{display:block;}
+@keyframes page-in{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+
+/* PLATFORMS PAGE */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;}
+.page-h-title{font-family:var(--font-display);font-size:28px;font-weight:800;letter-spacing:-0.5px;}
+.page-h-sub{font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:4px;}
+.btn-add{display:flex;align-items:center;gap:8px;padding:10px 20px;background:linear-gradient(135deg,var(--kill2),var(--kill));border:none;border-radius:8px;color:white;font-family:var(--font-display);font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all 0.2s;}
+.btn-add:hover{box-shadow:0 4px 20px var(--kill-glow);transform:translateY(-1px);}
+.platform-full-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;}
+.pf-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:all 0.2s;}
+.pf-card:hover{border-color:var(--border2);transform:translateY(-1px);}
+.pf-card.pf-safe{border-left:4px solid var(--safe);}
+.pf-card.pf-warn{border-left:4px solid var(--warn);}
+.pf-card.pf-danger{border-left:4px solid var(--kill);}
+.pf-card.pf-killed{border-left:4px solid var(--muted2);opacity:0.75;}
+.pf-top{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 14px;}
+.pf-identity{display:flex;align-items:center;gap:12px;}
+.pf-ico{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;}
+.pf-name{font-family:var(--font-display);font-size:17px;font-weight:700;}
+.pf-env-tag{font-family:var(--font-mono);font-size:9px;color:var(--muted);background:var(--panel);border:1px solid var(--border);padding:2px 7px;border-radius:3px;margin-top:3px;display:inline-block;}
+.pf-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-top:1px solid var(--border);}
+.pf-stat{padding:12px 16px;border-right:1px solid var(--border);}
+.pf-stat:last-child{border-right:none;}
+.pf-stat-label{font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;}
+.pf-stat-val{font-family:var(--font-display);font-size:18px;font-weight:800;letter-spacing:-0.5px;}
+.pf-gauge-row{padding:10px 20px 14px;}
+.pf-actions{display:flex;gap:6px;padding:0 16px 14px;}
+.pf-btn{flex:1;padding:7px 0;border-radius:5px;font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);transition:all 0.2s;}
+.pf-btn:hover{border-color:var(--border2);color:var(--text);}
+.pf-btn.pf-kill{border-color:rgba(255,26,46,0.3);color:var(--kill);}
+.pf-btn.pf-kill:hover{background:rgba(255,26,46,0.08);}
+.pf-btn.pf-restore{border-color:rgba(0,255,106,0.3);color:var(--safe);}
+.pf-btn.pf-restore:hover{background:rgba(0,255,106,0.06);}
+.pf-polled{font-family:var(--font-mono);font-size:9px;color:var(--muted2);padding:0 20px 10px;}
+
+/* INCIDENTS PAGE */
+.inc-stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px;}
+.inc-stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 20px;}
+.isc-label{font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;}
+.isc-val{font-family:var(--font-display);font-size:30px;font-weight:900;letter-spacing:-1px;}
+.isc-sub{font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:4px;}
+.inc-filters{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+.inc-filter-btn{padding:6px 14px;border-radius:4px;font-family:var(--font-mono);font-size:10px;cursor:pointer;transition:all 0.2s;border:1px solid var(--border);background:transparent;color:var(--muted);}
+.inc-filter-btn.active{background:rgba(255,26,46,0.1);border-color:rgba(255,26,46,0.3);color:var(--kill);}
+.inc-table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.inc-table{width:100%;border-collapse:collapse;}
+.inc-table th{padding:12px 16px;font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;background:var(--panel);border-bottom:1px solid var(--border);text-align:left;}
+.inc-table td{padding:14px 16px;font-size:13px;border-bottom:1px solid rgba(28,28,56,0.5);vertical-align:middle;}
+html[data-theme="light"] .inc-table td{border-bottom-color:rgba(216,216,236,0.6);}
+.inc-table tr:last-child td{border-bottom:none;}
+.inc-table tr:hover td{background:rgba(255,255,255,0.015);}
+html[data-theme="light"] .inc-table tr:hover td{background:rgba(0,0,0,0.015);}
+.inc-badge{display:inline-flex;padding:3px 8px;border-radius:3px;font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;}
+.ib-resolved{background:rgba(0,255,106,0.1);color:var(--safe);border:1px solid rgba(0,255,106,0.2);}
+.ib-active{background:rgba(255,26,46,0.1);color:var(--kill);border:1px solid rgba(255,26,46,0.2);animation:blink-danger 0.8s infinite;}
+.ib-restoring{background:rgba(255,184,0,0.1);color:var(--warn);border:1px solid rgba(255,184,0,0.2);}
+.inc-platform-pill{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:10px;font-weight:600;padding:3px 8px;background:var(--panel);border:1px solid var(--border);border-radius:3px;}
+.inc-empty{text-align:center;padding:60px 20px;color:var(--muted);font-family:var(--font-mono);font-size:12px;}
+
+/* THRESHOLDS PAGE */
+.thresh-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.thresh-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.tc-header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border);background:var(--panel);}
+.tc-platform{display:flex;align-items:center;gap:10px;}
+.tc-name{font-family:var(--font-display);font-size:16px;font-weight:700;}
+.tc-body{padding:20px;}
+.tc-field{margin-bottom:18px;}
+.tc-label{font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;}
+.tc-label span{font-size:11px;color:var(--text);font-weight:700;}
+.tc-slider{width:100%;height:4px;border-radius:2px;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;}
+.tc-slider::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--kill);cursor:pointer;box-shadow:0 0 8px var(--kill-glow);}
+.tc-slider.safe::-webkit-slider-thumb{background:var(--safe);box-shadow:0 0 8px var(--safe-glow);}
+.tc-slider.warn::-webkit-slider-thumb{background:var(--warn);box-shadow:0 0 8px var(--warn-glow);}
+.tc-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.tc-input-wrap{position:relative;}
+.tc-prefix{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-family:var(--font-mono);font-size:12px;color:var(--muted);}
+.tc-input{width:100%;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:9px 10px 9px 22px;font-family:var(--font-mono);font-size:13px;color:var(--text);outline:none;transition:border-color 0.2s;}
+.tc-input:focus{border-color:rgba(255,26,46,0.4);}
+.tc-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;}
+.tc-toggle-label{font-family:var(--font-mono);font-size:11px;color:var(--muted);}
+.toggle-switch{width:36px;height:20px;background:var(--border);border-radius:10px;cursor:pointer;position:relative;transition:background 0.25s;border:none;outline:none;}
+.toggle-switch.on{background:var(--safe);}
+.toggle-switch::after{content:'';position:absolute;width:14px;height:14px;background:white;border-radius:50%;top:3px;left:3px;transition:left 0.25s;box-shadow:0 1px 3px rgba(0,0,0,0.3);}
+.toggle-switch.on::after{left:19px;}
+.tc-alerts{border-top:1px solid var(--border);padding:16px 20px;}
+.tc-alert-label{font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;}
+.tc-alert-channels{display:flex;gap:8px;flex-wrap:wrap;}
+.tc-channel{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:4px;font-family:var(--font-mono);font-size:10px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);transition:all 0.2s;}
+.tc-channel.on{background:rgba(0,229,255,0.08);border-color:rgba(0,229,255,0.25);color:var(--cyan);}
+.tc-save-row{padding:12px 20px 16px;display:flex;gap:8px;}
+.tc-save{flex:1;padding:9px;background:linear-gradient(135deg,var(--kill2),var(--kill));border:none;border-radius:6px;font-family:var(--font-display);font-size:12px;font-weight:700;letter-spacing:1px;color:white;cursor:pointer;transition:all 0.2s;}
+.tc-save:hover{box-shadow:0 3px 16px var(--kill-glow);}
+.tc-reset{padding:9px 16px;background:transparent;border:1px solid var(--border);border-radius:6px;font-family:var(--font-display);font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;transition:all 0.2s;}
+.tc-reset:hover{border-color:var(--border2);color:var(--text);}
+.global-settings{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;}
+.gs-title{font-family:var(--font-display);font-size:15px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.gs-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.gs-item{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;}
+.gs-item-label{font-family:var(--font-mono);font-size:11px;color:var(--muted);}
+
+/* RESPONSIVE */
+@media(max-width:1200px){.content{grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto auto;}.kill-panel{grid-column:1/3;grid-row:4;}.platforms-section{grid-column:1/3;}.chart-section{grid-column:1/3;}.activity-feed{grid-column:1/3;}}
+@media(max-width:768px){.main{margin-left:0;}.sidebar{display:none;}.content{padding:16px;grid-template-columns:1fr;}.kill-panel,.platforms-section,.chart-section,.activity-feed{grid-column:1;}.platforms-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<!-- CUSTOM CURSOR -->
+<div id="cursor"></div>
+<div id="cursor-dot"></div>
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toasts"></div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="logo-row">
+    <div class="sidebar-logo">⚡</div>
+    <div class="sidebar-logo-text">CostGuard</div>
+  </div>
+  <div class="nav-items">
+    <button class="nav-btn active" onclick="setPage('dashboard',this)">
+      <span class="nav-icon">◉</span><span class="nav-label">Dashboard</span>
+    </button>
+    <button class="nav-btn" onclick="setPage('platforms',this)">
+      <span class="nav-icon">⬡</span><span class="nav-label">Platforms</span>
+    </button>
+    <button class="nav-btn" onclick="setPage('incidents',this)">
+      <span class="nav-icon">⚡</span><span class="nav-label">Incidents</span>
+    </button>
+    <button class="nav-btn" onclick="setPage('settings',this)">
+      <span class="nav-icon">◈</span><span class="nav-label">Thresholds</span>
+    </button>
+    <div class="nav-spacer"></div>
+    <button class="nav-btn" onclick="openConnectModal()">
+      <span class="nav-icon">+</span><span class="nav-label">Connect</span>
+    </button>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="page-title">Command Center</div>
+      <div class="system-status">
+        <div class="status-indicator" id="sysStatus"></div>
+        <span id="sysStatusText">ALL SYSTEMS NOMINAL</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="topbar-meta">POLLING EVERY 60s</div>
+      <div class="topbar-clock" id="clock">--:--:--</div>
+      <div class="theme-toggle" id="themeToggle">
+        <button class="tt-option active" id="ttDark" onclick="setTheme('dark')">
+          <span class="tt-icon">◑</span> Dark
+        </button>
+        <button class="tt-option" id="ttLight" onclick="setTheme('light')">
+          <span class="tt-icon">○</span> Light
+        </button>
+      </div>
+      <div class="alert-badge" id="alertBadge" onclick="showAlerts()">⚠ 0 ACTIVE</div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════
+       PAGE: DASHBOARD
+  ════════════════════════════════════════ -->
+  <div id="page-dashboard" class="page-section active">
+  <!-- CONTENT -->
+  <div class="content">
+
+    <!-- METRIC CARD 1 -->
+    <div class="metric-card" id="mc1">
+      <div class="mc-label">
+        <span>Total Burn Rate</span>
+        <span class="mc-delta up" id="mc1delta">+12%</span>
+      </div>
+      <div class="mc-value glow-green" id="mc1val" style="color:var(--safe);">$0.00</div>
+      <div class="mc-sub">per hour across all platforms</div>
+      <div class="sparkline" id="spark1"></div>
+      <div class="mc-bg-num">$</div>
+    </div>
+
+    <!-- METRIC CARD 2 -->
+    <div class="metric-card" id="mc2">
+      <div class="mc-label">
+        <span>Today's Spend</span>
+        <span class="mc-delta down" id="mc2delta">-3%</span>
+      </div>
+      <div class="mc-value" id="mc2val" style="color:var(--cyan);">$0.00</div>
+      <div class="mc-sub">vs $148.20 yesterday</div>
+      <div class="sparkline" id="spark2"></div>
+      <div class="mc-bg-num">24h</div>
+    </div>
+
+    <!-- METRIC CARD 3 -->
+    <div class="metric-card" id="mc3">
+      <div class="mc-label">
+        <span>Cost Saved (Lifetime)</span>
+        <span style="font-size:9px;color:var(--safe);">● ACTIVE</span>
+      </div>
+      <div class="mc-value glow-green" id="mc3val" style="color:var(--safe);">$0</div>
+      <div class="mc-sub">from 0 incidents caught</div>
+      <div class="sparkline" id="spark3"></div>
+      <div class="mc-bg-num">∞</div>
+    </div>
+
+    <!-- KILL PANEL -->
+    <div class="kill-panel corner-accent">
+      <div class="section-title" style="margin-bottom:0;">Kill Command</div>
+
+      <!-- BIG RING METER -->
+      <div class="kill-switch-visual">
+        <div class="kill-ring-outer">
+          <svg class="kill-ring-svg" viewBox="0 0 160 160">
+            <circle class="kill-ring-bg" cx="80" cy="80" r="66"/>
+            <circle class="kill-ring-fill" id="killRingFill" cx="80" cy="80" r="66"
+              stroke-dasharray="414.69"
+              stroke-dashoffset="414.69"
+              stroke="var(--safe)"/>
+          </svg>
+          <div class="kill-ring-center">
+            <div class="krc-value" id="killPct" style="color:var(--safe);">0%</div>
+            <div class="krc-label">of threshold</div>
+            <div class="krc-sublabel" id="killSublabel">MONITORING</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BLAST RADIUS (shows when danger) -->
+      <div class="blast-radius" id="blastRadius" style="display:none;">
+        <div class="br-title">⚡ Projected Damage (24h)</div>
+        <div style="display:flex;align-items:center;gap:20px;">
+          <div class="br-visual">
+            <div class="br-rings">
+              <div class="br-ring"></div><div class="br-ring"></div>
+              <div class="br-ring"></div><div class="br-ring"></div>
+              <div class="br-dot"></div>
+            </div>
+          </div>
+          <div>
+            <div class="br-amount" id="blastAmount">$0</div>
+            <div class="br-label">if not killed now</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DISTANCE TO THRESHOLD -->
+      <div class="distance-countdown">
+        <div class="dc-title">Distance to Threshold</div>
+        <div class="dc-items" id="distanceItems"></div>
+      </div>
+
+      <!-- KILL BUTTON -->
+      <button class="kill-btn kill-btn-safe" id="killBtn" onclick="handleKillButton()">
+        ◉ SYSTEM SAFE
+      </button>
+
+      <!-- RECENT KILL LOG -->
+      <div>
+        <div class="dc-title" style="margin-bottom:8px;">Recent Actions</div>
+        <div id="recentKills" style="display:flex;flex-direction:column;gap:6px;font-family:var(--font-mono);font-size:10px;color:var(--muted);">
+          <div style="color:var(--muted2);">No actions yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHART SECTION -->
+    <div class="chart-section" style="grid-column:1/4;">
+      <div class="chart-header">
+        <div class="section-title" style="margin-bottom:0;">Spend Rate (Live)</div>
+        <div class="chart-tabs">
+          <div class="chart-tab active" onclick="setChart(this,'1h')">1H</div>
+          <div class="chart-tab" onclick="setChart(this,'6h')">6H</div>
+          <div class="chart-tab" onclick="setChart(this,'24h')">24H</div>
+          <div class="chart-tab" onclick="setChart(this,'7d')">7D</div>
+        </div>
+      </div>
+      <div class="chart-canvas">
+        <canvas id="mainChart"></canvas>
+      </div>
+    </div>
+
+    <!-- PLATFORMS -->
+    <div class="platforms-section">
+      <div class="section-title">Connected Platforms</div>
+      <div class="platforms-grid" id="platformsGrid"></div>
+    </div>
+
+    <!-- ACTIVITY FEED -->
+    <div class="activity-feed">
+      <div class="section-title">Live Activity</div>
+      <div class="feed-items" id="activityFeed"></div>
+    </div>
+
+  </div><!-- /content -->
+  </div><!-- /page-dashboard -->
+
+  <!-- ════════════════════════════════════════
+       PAGE: PLATFORMS
+  ════════════════════════════════════════ -->
+  <div id="page-platforms" class="page-section">
+    <div class="page-header">
+      <div>
+        <div class="page-h-title">Connected Platforms</div>
+        <div class="page-h-sub">6 platforms monitored · Last polled <span id="lastPollTime">just now</span></div>
+      </div>
+      <button class="btn-add" onclick="openConnectModal()">+ Connect Platform</button>
+    </div>
+    <div class="platform-full-grid" id="platformFullGrid"></div>
+  </div>
+
+  <!-- ════════════════════════════════════════
+       PAGE: INCIDENTS
+  ════════════════════════════════════════ -->
+  <div id="page-incidents" class="page-section">
+    <div class="page-header">
+      <div>
+        <div class="page-h-title">Incident History</div>
+        <div class="page-h-sub">Full log of all circuit breaker events</div>
+      </div>
+      <button class="btn-add" style="background:var(--panel);border:1px solid var(--border);color:var(--text);box-shadow:none;" onclick="exportIncidents()">↓ Export CSV</button>
+    </div>
+    <div class="inc-stats-row">
+      <div class="inc-stat-card">
+        <div class="isc-label">Total Saved</div>
+        <div class="isc-val" id="isc-saved" style="color:var(--safe);">$0</div>
+        <div class="isc-sub">lifetime protection</div>
+      </div>
+      <div class="inc-stat-card">
+        <div class="isc-label">Incidents</div>
+        <div class="isc-val" id="isc-total" style="color:var(--text);">0</div>
+        <div class="isc-sub">total events caught</div>
+      </div>
+      <div class="inc-stat-card">
+        <div class="isc-label">Avg Response</div>
+        <div class="isc-val" style="color:var(--cyan);">&lt;60s</div>
+        <div class="isc-sub">detection to kill</div>
+      </div>
+      <div class="inc-stat-card">
+        <div class="isc-label">This Month</div>
+        <div class="isc-val" id="isc-month" style="color:var(--warn);">0</div>
+        <div class="isc-sub">incidents in March</div>
+      </div>
+    </div>
+    <div class="inc-filters">
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);">FILTER:</div>
+      <button class="inc-filter-btn active" onclick="filterIncidents('all',this)">All</button>
+      <button class="inc-filter-btn" onclick="filterIncidents('active',this)">Active</button>
+      <button class="inc-filter-btn" onclick="filterIncidents('resolved',this)">Resolved</button>
+      <button class="inc-filter-btn" onclick="filterIncidents('openai',this)">OpenAI</button>
+      <button class="inc-filter-btn" onclick="filterIncidents('aws',this)">AWS</button>
+      <button class="inc-filter-btn" onclick="filterIncidents('anthropic',this)">Anthropic</button>
+    </div>
+    <div class="inc-table-wrap">
+      <table class="inc-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Platform</th>
+            <th>Trigger</th>
+            <th>Burn Rate</th>
+            <th>Duration</th>
+            <th>Saved (est.)</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="incidentsTableBody">
+          <tr><td colspan="8" class="inc-empty">No incidents recorded yet. Circuit breakers are armed and monitoring.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════
+       PAGE: THRESHOLDS
+  ════════════════════════════════════════ -->
+  <div id="page-thresholds" class="page-section">
+    <div class="page-header">
+      <div>
+        <div class="page-h-title">Threshold Configuration</div>
+        <div class="page-h-sub">Set limits per platform · Changes take effect on next poll cycle</div>
+      </div>
+    </div>
+
+    <!-- Global Settings -->
+    <div class="global-settings">
+      <div class="gs-title">⚙ Global Settings</div>
+      <div class="gs-grid">
+        <div class="gs-item">
+          <div class="gs-item-label">Auto Kill Switch</div>
+          <button class="toggle-switch on" id="gs-autokill" onclick="toggleGS(this)"></button>
+        </div>
+        <div class="gs-item">
+          <div class="gs-item-label">Slack Alerts</div>
+          <button class="toggle-switch on" id="gs-slack" onclick="toggleGS(this)"></button>
+        </div>
+        <div class="gs-item">
+          <div class="gs-item-label">Email Alerts</div>
+          <button class="toggle-switch on" id="gs-email" onclick="toggleGS(this)"></button>
+        </div>
+        <div class="gs-item">
+          <div class="gs-item-label">Auto Restore</div>
+          <button class="toggle-switch" id="gs-autorestore" onclick="toggleGS(this)"></button>
+        </div>
+        <div class="gs-item">
+          <div class="gs-item-label">Anomaly Detection</div>
+          <button class="toggle-switch on" id="gs-anomaly" onclick="toggleGS(this)"></button>
+        </div>
+        <div class="gs-item">
+          <div class="gs-item-label">Weekly Reports</div>
+          <button class="toggle-switch" id="gs-reports" onclick="toggleGS(this)"></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="thresh-grid" id="thresholdGrid"></div>
+  </div>
+
+<script>
+// CostGuard Dashboard
+
+/* ─────────────────────────────────────────────
+   CURSOR
+───────────────────────────────────────────── */
+const cursor = document.getElementById('cursor');
+const cursorDot = document.getElementById('cursor-dot');
+let mx = 0, my = 0, dx = 0, dy = 0;
+document.addEventListener('mousemove', e => {
+  mx = e.clientX; my = e.clientY;
+  cursor.style.left = mx - 10 + 'px';
+  cursor.style.top = my - 10 + 'px';
+});
+(function animCursor() {
+  dx += (mx - dx) * 0.12;
+  dy += (my - dy) * 0.12;
+  cursorDot.style.left = dx + 'px';
+  cursorDot.style.top = dy + 'px';
+  requestAnimationFrame(animCursor);
+})();
+document.querySelectorAll('.kill-btn-armed,.kill-btn,.kill-btn-dead').forEach(el => {
+  el.addEventListener('mouseenter', () => cursor.classList.add('kill-mode'));
+  el.addEventListener('mouseleave', () => cursor.classList.remove('kill-mode'));
+});
+
+/* ─────────────────────────────────────────────
+   CLOCK
+───────────────────────────────────────────── */
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US',{hour12:false});
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+/* ─────────────────────────────────────────────
+   STATE
+───────────────────────────────────────────── */
+const PLATFORMS = [
+  { id:'openai', name:'OpenAI', icon:'🤖', color:'#19C37D', env:'Production',
+    burnRate:0, threshold:200, dailyBudget:500, spent:0, state:'safe', killed:false },
+  { id:'anthropic', name:'Anthropic', icon:'🧠', color:'#D97706', env:'Production',
+    burnRate:0, threshold:150, dailyBudget:300, spent:0, state:'safe', killed:false },
+  { id:'aws', name:'AWS', icon:'☁️', color:'#F59E0B', env:'us-east-1',
+    burnRate:0, threshold:300, dailyBudget:800, spent:0, state:'safe', killed:false },
+  { id:'vercel', name:'Vercel', icon:'▲', color:'#FFFFFF', env:'team-prod',
+    burnRate:0, threshold:50, dailyBudget:100, spent:0, state:'safe', killed:false },
+  { id:'supabase', name:'Supabase', icon:'🐘', color:'#3ECF8E', env:'main-db',
+    burnRate:0, threshold:80, dailyBudget:200, spent:0, state:'safe', killed:false },
+  { id:'twilio', name:'Twilio', icon:'📱', color:'#F22F46', env:'messaging',
+    burnRate:0, threshold:100, dailyBudget:250, spent:0, state:'safe', killed:false },
+];
+
+const chartData = Array(60).fill(0).map((_,i) => ({ t:i, v: Math.random()*30+5 }));
+let activeAlerts = 0;
+let lifetimeSaved = 0;
+let killHistory = [];
+
+/* ─────────────────────────────────────────────
+   SIMULATION ENGINE
+───────────────────────────────────────────── */
+let simMode = 'normal'; // normal | spike | crisis
+let simTimer = 0;
+
+function tick() {
+  simTimer++;
+
+  // Random crisis event every 40-80 ticks
+  if (simMode === 'normal' && simTimer > 40 && Math.random() < 0.015) {
+    simMode = 'spike';
+    const p = PLATFORMS.filter(p => !p.killed)[Math.floor(Math.random() * PLATFORMS.filter(p=>!p.killed).length)];
+    if (p) {
+      p._spiking = true;
+      addActivity('warn', p.name, `Unusual spend rate detected — z-score 2.4`, p.burnRate);
+    }
+  }
+  if (simMode === 'spike' && simTimer > 60 && Math.random() < 0.02) simMode = 'crisis';
+  if (simMode === 'crisis' && simTimer > 90) { simMode = 'normal'; simTimer = 0; PLATFORMS.forEach(p=>p._spiking=false); }
+
+  PLATFORMS.forEach(p => {
+    if (p.killed) { p.burnRate = 0; return; }
+    let base = { openai:12, anthropic:8, aws:25, vercel:3, supabase:4, twilio:6 }[p.id] || 5;
+    let noise = (Math.random() - 0.48) * base * 0.4;
+    if (p._spiking) base *= (3 + Math.random() * 5);
+    p.burnRate = Math.max(0, p.burnRate * 0.85 + (base + noise) * 0.15);
+    p.burnRate = parseFloat(p.burnRate.toFixed(2));
+    p.spent += p.burnRate / 60;
+    const pct = p.burnRate / p.threshold;
+    p.state = pct < 0.6 ? 'safe' : pct < 0.85 ? 'warn' : 'danger';
+    if (p.state === 'danger' && !p._alertedDanger) {
+      p._alertedDanger = true;
+      addActivity('danger', p.name, `Threshold breach! ${p.burnRate.toFixed(2)}/hr vs ${p.threshold}/hr limit`, p.burnRate);
+      showToast('kill', `⚡ ${p.name} exceeded threshold`, `$${p.burnRate.toFixed(0)}/hr`);
+      activeAlerts++;
+    }
+    if (p.state !== 'danger') p._alertedDanger = false;
+  });
+
+  updateMetrics();
+  updatePlatformCards();
+  updateKillPanel();
+  updateChart();
+  updateAlertBadge();
+}
+
+/* ─────────────────────────────────────────────
+   METRICS
+───────────────────────────────────────────── */
+function updateMetrics() {
+  const alive = PLATFORMS.filter(p => !p.killed);
+  const totalBurn = alive.reduce((s, p) => s + p.burnRate, 0);
+  const todaySpend = PLATFORMS.reduce((s, p) => s + p.spent, 0);
+
+  animateValue('mc1val', totalBurn, '$', '/hr',
+    totalBurn > 150 ? 'var(--kill)' : totalBurn > 80 ? 'var(--warn)' : 'var(--safe)');
+  animateValue('mc2val', todaySpend, '$', '', 'var(--cyan)');
+  document.getElementById('mc3val').textContent = '$' + lifetimeSaved.toFixed(0);
+
+  // Status bar
+  const maxPct = Math.max(...PLATFORMS.map(p => p.killed ? 0 : p.burnRate / p.threshold));
+  const statusEl = document.getElementById('sysStatus');
+  const statusTxt = document.getElementById('sysStatusText');
+  if (maxPct > 0.9) {
+    statusEl.style.background = 'var(--kill)'; statusEl.style.boxShadow = '0 0 8px var(--kill-glow)';
+    statusTxt.textContent = '⚡ BREACH DETECTED'; statusTxt.style.color = 'var(--kill)';
+  } else if (maxPct > 0.65) {
+    statusEl.style.background = 'var(--warn)'; statusEl.style.boxShadow = '0 0 8px var(--warn-glow)';
+    statusTxt.textContent = '▲ ELEVATED SPEND'; statusTxt.style.color = 'var(--warn)';
+  } else {
+    statusEl.style.background = 'var(--safe)'; statusEl.style.boxShadow = '0 0 8px var(--safe-glow)';
+    statusTxt.textContent = '● ALL SYSTEMS NOMINAL'; statusTxt.style.color = 'var(--safe)';
+  }
+
+  // Sparklines
+  updateSparkline('spark1', getSparkData(totalBurn), totalBurn > 150 ? '#FF1A2E' : '#00FF6A');
+  updateSparkline('spark2', getSparkData(todaySpend / 100), '#00E5FF');
+  updateSparkline('spark3', [], '#00FF6A');
+}
+
+const sparkBuffers = { spark1:[], spark2:[], spark3:[] };
+function getSparkData(val) { return val; }
+
+function updateSparkline(id, val, color) {
+  if (typeof val === 'number') {
+    sparkBuffers[id].push(val);
+    if (sparkBuffers[id].length > 40) sparkBuffers[id].shift();
+  }
+  const data = sparkBuffers[id];
+  if (data.length < 2) return;
+  const el = document.getElementById(id);
+  if (!el) return;
+  const w = el.clientWidth || 200, h = 32;
+  const max = Math.max(...data, 0.1);
+  const min = Math.min(...data);
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - ((v - min) / (max - min + 0.01)) * (h - 4) - 2;
+    return `${x},${y}`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <defs><linearGradient id="sg_${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <path d="M${pts.join('L')}L${w},${h}L0,${h}Z" fill="url(#sg_${id})"/>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+function animateValue(id, val, pre='', suf='', color) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = pre + val.toFixed(2) + suf;
+  el.style.color = color;
+}
+
+/* ─────────────────────────────────────────────
+   PLATFORM CARDS
+───────────────────────────────────────────── */
+function updatePlatformCards() {
+  const grid = document.getElementById('platformsGrid');
+  if (!grid) return;
+  if (grid.children.length === 0) renderPlatformCards();
+
+  PLATFORMS.forEach(p => {
+    const card = document.getElementById('pc_' + p.id);
+    if (!card) return;
+    const pct = p.killed ? 0 : Math.min(1, p.burnRate / p.threshold);
+    const stateClass = p.killed ? 'status-killed' : p.state === 'danger' ? 'status-danger' : p.state === 'warn' ? 'status-warn' : 'status-safe';
+    card.className = 'platform-card ' + stateClass;
+    const stateEl = card.querySelector('.pc-state');
+    if (stateEl) {
+      stateEl.className = 'pc-state ' + (p.killed ? 'state-killed' : p.state === 'danger' ? 'state-danger' : p.state === 'warn' ? 'state-warn' : 'state-safe');
+      stateEl.textContent = p.killed ? 'KILLED' : p.state.toUpperCase();
+    }
+    const burnEl = card.querySelector('.pc-burn-value');
+    if (burnEl) {
+      burnEl.textContent = '$' + p.burnRate.toFixed(2);
+      burnEl.style.color = p.killed ? 'var(--muted)' : p.state === 'danger' ? 'var(--kill)' : p.state === 'warn' ? 'var(--warn)' : 'var(--safe)';
+    }
+    const fill = card.querySelector('.tg-fill');
+    if (fill) {
+      fill.style.width = (pct * 100) + '%';
+      fill.className = 'tg-fill ' + (p.killed ? 'safe' : p.state === 'danger' ? 'danger' : p.state === 'warn' ? 'warn' : 'safe');
+    }
+    const dist = card.querySelector('.tg-distance');
+    if (dist) {
+      const rem = p.threshold - p.burnRate;
+      dist.textContent = p.killed ? '— killed' : rem > 0 ? `$${rem.toFixed(0)}/hr left` : 'BREACHED';
+      dist.style.color = p.state === 'danger' ? 'var(--kill)' : p.state === 'warn' ? 'var(--warn)' : 'var(--safe)';
+    }
+    const spentEl = card.querySelector('.pc-trend');
+    if (spentEl) spentEl.textContent = `Today: $${p.spent.toFixed(2)} / Budget $${p.dailyBudget}`;
+  });
+}
+
+function renderPlatformCards() {
+  const grid = document.getElementById('platformsGrid');
+  if (PLATFORMS.length === 0) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/4">
+      <div class="empty-orbit">
+        <div class="empty-orbit-ring"><div class="empty-orbit-dot"></div></div>
+        <div class="empty-orbit-ring"><div class="empty-orbit-dot" style="top:auto;bottom:0;"></div></div>
+        <div class="empty-orbit-ring"><div class="empty-orbit-dot" style="left:0;top:50%;"></div></div>
+        <div class="empty-orbit-center">🛰️</div>
+      </div>
+      <div class="empty-title">No Platforms Connected</div>
+      <div class="empty-desc">Connect your first platform to start monitoring spend in real-time. Takes under 3 minutes.</div>
+      <button class="empty-btn" onclick="openConnectModal()">+ Connect First Platform</button>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = PLATFORMS.map(p => {
+    const pct = 0;
+    return `<div class="platform-card status-safe" id="pc_${p.id}" onclick="openPlatformDetail('${p.id}')">
+      <div class="pc-header">
+        <div class="pc-platform">
+          <div class="pc-icon" style="background:${p.color}22;">${p.icon}</div>
+          <div>
+            <div class="pc-name">${p.name}</div>
+            <div class="pc-env">${p.env}</div>
+          </div>
+        </div>
+        <div class="pc-state state-safe">SAFE</div>
+      </div>
+      <div class="pc-burn">
+        <div class="pc-burn-value" style="color:var(--safe);">$0.00</div>
+        <div class="pc-burn-unit">/hr burn</div>
+      </div>
+      <div class="threshold-gauge">
+        <div class="tg-header">
+          <div class="tg-label">Distance to threshold</div>
+          <div class="tg-distance" style="color:var(--safe);">$${p.threshold}/hr left</div>
+        </div>
+        <div class="tg-track">
+          <div class="tg-fill safe" style="width:0%">
+            <div class="tg-marker"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pc-trend" style="font-family:var(--font-mono);font-size:10px;color:var(--muted);">Today: $0.00 / Budget $${p.dailyBudget}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ─────────────────────────────────────────────
+   KILL PANEL
+───────────────────────────────────────────── */
+function updateKillPanel() {
+  const dangerous = PLATFORMS.filter(p => !p.killed && (p.state === 'danger' || p.state === 'warn'));
+  const worstPct = Math.max(0, ...PLATFORMS.filter(p=>!p.killed).map(p => p.burnRate / p.threshold));
+
+  // Ring
+  const fill = document.getElementById('killRingFill');
+  const pctEl = document.getElementById('killPct');
+  const subEl = document.getElementById('killSublabel');
+  const pct = Math.min(1, worstPct);
+  const circ = 414.69;
+  fill.style.strokeDashoffset = circ - (circ * pct);
+  fill.style.stroke = pct > 0.9 ? 'var(--kill)' : pct > 0.65 ? 'var(--warn)' : 'var(--safe)';
+  pctEl.style.color = pct > 0.9 ? 'var(--kill)' : pct > 0.65 ? 'var(--warn)' : 'var(--safe)';
+  pctEl.textContent = Math.round(pct * 100) + '%';
+  subEl.textContent = pct > 0.9 ? 'BREACH' : pct > 0.65 ? 'ELEVATED' : 'NOMINAL';
+
+  // Blast radius
+  const br = document.getElementById('blastRadius');
+  if (pct > 0.7) {
+    br.style.display = 'block';
+    const projDamage = dangerous.reduce((s,p) => s + p.burnRate * 24, 0);
+    document.getElementById('blastAmount').textContent = '$' + projDamage.toFixed(0);
+  } else {
+    br.style.display = 'none';
+  }
+
+  // Distance items
+  const di = document.getElementById('distanceItems');
+  const isLightNow = document.documentElement.getAttribute('data-theme') === 'light';
+  di.innerHTML = PLATFORMS.filter(p=>!p.killed).slice(0,5).map(p => {
+    const pct = Math.min(1, p.burnRate / p.threshold);
+    const color = pct > 0.9 ? 'var(--kill)' : pct > 0.65 ? 'var(--warn)' : 'var(--safe)';
+    const bgColor = isLightNow
+      ? (pct > 0.9 ? '#D4001F' : pct > 0.65 ? '#B87800' : '#007A3D')
+      : (pct > 0.9 ? '#FF1A2E' : pct > 0.65 ? '#FFB800' : '#00FF6A');
+    return `<div class="dc-item">
+      <div class="dc-platform">${p.icon} ${p.name}</div>
+      <div class="dc-bar-wrap"><div class="dc-bar-fill" style="width:${pct*100}%;background:${bgColor};"></div></div>
+      <div class="dc-pct" style="color:${color};">${Math.round(pct*100)}%</div>
+    </div>`;
+  }).join('');
+
+  // Kill button
+  const btn = document.getElementById('killBtn');
+  const inDanger = PLATFORMS.some(p => !p.killed && p.state === 'danger');
+  const allKilled = PLATFORMS.every(p => p.killed);
+  btn.onmouseenter = () => cursor.classList.add('kill-mode');
+  btn.onmouseleave = () => cursor.classList.remove('kill-mode');
+  if (allKilled) {
+    btn.className = 'kill-btn kill-btn-safe';
+    btn.innerHTML = '↺ RESTORE ALL SERVICES';
+    btn.onclick = restoreAll;
+  } else if (inDanger) {
+    btn.className = 'kill-btn kill-btn-armed';
+    btn.innerHTML = '⚡ EXECUTE KILL SWITCH';
+    btn.onclick = () => openKillConfirm();
+  } else if (pct > 0.65) {
+    btn.className = 'kill-btn kill-btn-armed';
+    btn.style.background = 'linear-gradient(135deg,var(--warn2),var(--warn))';
+    btn.style.boxShadow = '0 4px 30px rgba(255,184,0,0.3)';
+    btn.innerHTML = '▲ PRE-EMPTIVE KILL';
+    btn.onclick = () => openKillConfirm();
+  } else {
+    btn.className = 'kill-btn kill-btn-safe';
+    btn.innerHTML = '◉ SYSTEM SAFE';
+    btn.onclick = null;
+  }
+}
+
+/* ─────────────────────────────────────────────
+   KILL CONFIRM MODAL
+───────────────────────────────────────────── */
+function openKillConfirm() {
+  const dangerous = PLATFORMS.filter(p => !p.killed && p.burnRate > 0);
+  const projSave = dangerous.reduce((s,p)=>s+p.burnRate*24,0);
+  showModal(`
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="kill-confirm-content">
+      <div class="kill-warning-icon">⚡</div>
+      <div class="modal-title" style="color:var(--kill);">Confirm Kill Switch</div>
+      <div class="modal-sub">This will immediately halt ${dangerous.length} active platform(s)</div>
+      <div style="background:rgba(255,26,46,0.06);border:1px solid rgba(255,26,46,0.2);border-radius:8px;padding:16px;margin:16px 0;">
+        ${dangerous.map(p=>`<div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;padding:4px 0;border-bottom:1px solid rgba(255,26,46,0.1);">
+          <span>${p.icon} ${p.name}</span>
+          <span style="color:var(--kill);">$${p.burnRate.toFixed(2)}/hr</span>
+        </div>`).join('')}
+        <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:12px;padding:8px 0 0;font-weight:700;">
+          <span>Projected 24h save:</span>
+          <span style="color:var(--safe);">$${projSave.toFixed(0)}</span>
+        </div>
+      </div>
+      <div class="kill-countdown-label">Auto-executing in</div>
+      <div class="kill-countdown" id="killCountdown">5</div>
+      <div class="kill-progress-wrap"><div class="kill-progress-fill" id="killProgress" style="width:100%;"></div></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary" id="killNowBtn" onclick="executeKillAll()">⚡ Kill Now</button>
+      </div>
+    </div>
+  `);
+  let count = 5, prog = 100;
+  const cd = setInterval(() => {
+    count--;
+    prog -= 20;
+    const cdEl = document.getElementById('killCountdown');
+    const pEl = document.getElementById('killProgress');
+    if (!cdEl) { clearInterval(cd); return; }
+    cdEl.textContent = count;
+    if (pEl) pEl.style.width = prog + '%';
+    if (count <= 0) { clearInterval(cd); executeKillAll(); }
+  }, 1000);
+  document.getElementById('killNowBtn').onclick = () => { clearInterval(cd); executeKillAll(); };
+}
+
+function executeKillAll() {
+  closeModal();
+  const killed = PLATFORMS.filter(p => !p.killed && p.burnRate > 0);
+  let saved = 0;
+  killed.forEach(p => {
+    const proj = p.burnRate * 24;
+    saved += proj;
+    logIncident(p, proj);
+    p.killed = true;
+    p.state = 'killed';
+    p.burnRate = 0;
+    addActivity('kill', p.name, `Kill switch executed — service halted`, proj);
+    killHistory.unshift({ time: new Date().toLocaleTimeString('en-US',{hour12:false}), platform: p.name, saved: proj });
+    if (killHistory.length > 5) killHistory.pop();
+  });
+  lifetimeSaved += saved;
+  activeAlerts = 0;
+  showToast('safe', `✓ ${killed.length} platform(s) killed`, `$${saved.toFixed(0)} projected saved`);
+  updateKillHistory();
+}
+
+function restoreAll() {
+  PLATFORMS.forEach(p => {
+    if (p.killed) {
+      p.killed = false;
+      p.burnRate = 0;
+      p.state = 'safe';
+      addActivity('safe', p.name, 'Service restored — monitoring resumed', 0);
+    }
+  });
+  showToast('warn', '↺ All services restored', 'Monitoring resumed');
+}
+
+function updateKillHistory() {
+  const el = document.getElementById('recentKills');
+  if (!el || killHistory.length === 0) return;
+  el.innerHTML = killHistory.slice(0,3).map(k =>
+    `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);">
+      <span style="color:var(--muted);">${k.time} ${k.platform}</span>
+      <span style="color:var(--safe);">-$${k.saved.toFixed(0)}</span>
+    </div>`
+  ).join('');
+}
+
+/* ─────────────────────────────────────────────
+   CHART
+───────────────────────────────────────────── */
+let chartMode = '1h';
+let chartPts = Array(60).fill(null).map((_,i) => ({ x:i, y: Math.random()*20+5 }));
+let chartCtx, chartW, chartH;
+
+function initChart() {
+  const canvas = document.getElementById('mainChart');
+  if (!canvas) return;
+  chartCtx = canvas.getContext('2d');
+  resizeChart();
+}
+
+function resizeChart() {
+  const canvas = document.getElementById('mainChart');
+  if (!canvas || !canvas.parentElement) return;
+  chartW = canvas.parentElement.clientWidth;
+  chartH = 140;
+  canvas.width = chartW;
+  canvas.height = chartH;
+  drawChart();
+}
+
+function drawChart() {
+  if (!chartCtx) return;
+  const ctx = chartCtx;
+  ctx.clearRect(0, 0, chartW, chartH);
+  const data = chartPts;
+  const max = Math.max(...data.map(d=>d.y), 10) * 1.2;
+  const min = 0;
+
+  // Read theme-aware colors from CSS vars
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const gridColor = isLight ? 'rgba(0,0,40,0.08)' : 'rgba(28,28,56,0.8)';
+  const labelColor = isLight ? 'rgba(0,0,60,0.35)' : 'rgba(90,90,136,0.6)';
+  const threshColor = isLight ? 'rgba(180,0,20,0.25)' : 'rgba(255,26,46,0.3)';
+  const threshLabelColor = isLight ? 'rgba(180,0,20,0.5)' : 'rgba(255,26,46,0.5)';
+
+  // Grid lines
+  ctx.strokeStyle = gridColor;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = (chartH - 20) * (1 - i/4) + 10;
+    ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(chartW - 10, y); ctx.stroke();
+    ctx.fillStyle = labelColor;
+    ctx.font = '9px Share Tech Mono';
+    ctx.fillText('$' + Math.round(max * i/4), 2, y + 3);
+  }
+
+  // Threshold line
+  const threshY = (chartH - 20) * (1 - 150/max) + 10;
+  ctx.strokeStyle = threshColor;
+  ctx.setLineDash([4,4]);
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(40, threshY); ctx.lineTo(chartW-10, threshY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = threshLabelColor;
+  ctx.font = '9px Share Tech Mono';
+  ctx.fillText('THRESHOLD', chartW - 80, threshY - 4);
+
+  // Line
+  const pts = data.map((d, i) => ({
+    x: 40 + (i / (data.length - 1)) * (chartW - 50),
+    y: (chartH - 20) * (1 - (d.y - min) / (max - min)) + 10
+  }));
+
+  // Gradient fill — theme-adapted
+  const grad = ctx.createLinearGradient(0, 0, 0, chartH);
+  const lastVal = data[data.length-1].y;
+  const lineColor = isLight
+    ? (lastVal > 150 ? '#D4001F' : lastVal > 80 ? '#B87800' : '#007A3D')
+    : (lastVal > 150 ? '#FF1A2E' : lastVal > 80 ? '#FFB800' : '#00FF6A');
+  const gradOpacity = isLight ? '0.12' : '0.2';
+  const gradMap = isLight
+    ? { '#D4001F':`rgba(212,0,31,${gradOpacity})`, '#B87800':`rgba(184,120,0,0.1)`, '#007A3D':`rgba(0,122,61,0.1)` }
+    : { '#FF1A2E':'rgba(255,26,46,0.2)', '#FFB800':'rgba(255,184,0,0.15)', '#00FF6A':'rgba(0,255,106,0.15)' };
+  grad.addColorStop(0, gradMap[lineColor] || 'rgba(0,0,0,0.1)');
+  grad.addColorStop(1, 'transparent');
+
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, chartH - 10);
+  pts.forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.lineTo(pts[pts.length-1].x, chartH - 10);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line stroke
+  ctx.beginPath();
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Live dot
+  const last = pts[pts.length - 1];
+  ctx.beginPath();
+  ctx.arc(last.x, last.y, 4, 0, Math.PI*2);
+  ctx.fillStyle = lineColor;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(last.x, last.y, 8, 0, Math.PI*2);
+  ctx.strokeStyle = lineColor.replace('#','rgba(').replace('FF1A2E','255,26,46,0.3)').replace('FFB800','255,184,0,0.3)').replace('00FF6A','0,255,106,0.3)');
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function updateChart() {
+  const totalBurn = PLATFORMS.filter(p=>!p.killed).reduce((s,p)=>s+p.burnRate, 0);
+  chartPts.push({ x: chartPts.length, y: totalBurn });
+  chartPts.shift();
+  drawChart();
+}
+
+function setChart(el, mode) {
+  document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  chartMode = mode;
+}
+
+/* ─────────────────────────────────────────────
+   ACTIVITY FEED
+───────────────────────────────────────────── */
+const activityLog = [];
+function addActivity(type, platform, msg, amount) {
+  const time = new Date().toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  activityLog.unshift({ type, platform, msg, amount, time });
+  if (activityLog.length > 30) activityLog.pop();
+  renderFeed();
+}
+
+function renderFeed() {
+  const feed = document.getElementById('activityFeed');
+  if (!feed) return;
+  const color = { kill:'var(--kill)', safe:'var(--safe)', warn:'var(--warn)', danger:'var(--kill)' };
+  feed.innerHTML = activityLog.slice(0, 12).map(a =>
+    `<div class="feed-item">
+      <div class="fi-dot" style="background:${color[a.type]};box-shadow:0 0 6px ${color[a.type]};"></div>
+      <div class="fi-time">${a.time}</div>
+      <div class="fi-platform">${a.platform}</div>
+      <div class="fi-msg">${a.msg}</div>
+      <div class="fi-amount" style="color:${color[a.type]};">${a.amount > 0 ? '$'+a.amount.toFixed(2)+'/hr' : ''}</div>
+    </div>`
+  ).join('');
+}
+
+/* ─────────────────────────────────────────────
+   ALERT BADGE
+───────────────────────────────────────────── */
+function updateAlertBadge() {
+  const danger = PLATFORMS.filter(p=>!p.killed && p.state==='danger').length;
+  const badge = document.getElementById('alertBadge');
+  if (danger > 0) {
+    badge.style.background = 'rgba(255,26,46,0.15)';
+    badge.style.color = 'var(--kill)';
+    badge.style.borderColor = 'rgba(255,26,46,0.4)';
+    badge.textContent = `⚡ ${danger} BREACH`;
+    badge.style.animation = 'blink-danger 0.8s infinite';
+  } else {
+    badge.style.background = 'rgba(90,90,136,0.08)';
+    badge.style.color = 'var(--muted)';
+    badge.style.borderColor = 'rgba(90,90,136,0.2)';
+    badge.textContent = `◉ NOMINAL`;
+    badge.style.animation = '';
+  }
+}
+
+function showAlerts() {
+  const dangerous = PLATFORMS.filter(p=>!p.killed && p.state!=='safe');
+  if (dangerous.length === 0) { showToast('safe', '✓ No active alerts', 'All systems nominal'); return; }
+  showModal(`
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-title">Active Alerts</div>
+    <div class="modal-sub">${dangerous.length} platform(s) require attention</div>
+    ${dangerous.map(p=>`<div style="background:var(--panel);border:1px solid rgba(255,26,46,0.15);border-radius:8px;padding:14px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-family:var(--font-display);font-size:16px;font-weight:700;">${p.icon} ${p.name}</div>
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--kill);background:rgba(255,26,46,0.1);padding:3px 8px;border-radius:3px;">${p.state.toUpperCase()}</div>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:12px;color:var(--muted);margin-top:8px;">
+        Burn: <span style="color:var(--kill);">$${p.burnRate.toFixed(2)}/hr</span> vs threshold $${p.threshold}/hr
+      </div>
+    </div>`).join('')}
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Dismiss</button>
+      <button class="btn-primary" onclick="closeModal();openKillConfirm()">⚡ Execute Kill</button>
+    </div>
+  `);
+}
+
+/* ─────────────────────────────────────────────
+   MODALS
+───────────────────────────────────────────── */
+function showModal(html) {
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+}
+document.getElementById('modalOverlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modalOverlay')) closeModal();
+});
+
+function openConnectModal() {
+  showModal(`
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-title">Connect Platform</div>
+    <div class="modal-sub">Your credentials are encrypted with AES-256-GCM before storage</div>
+    <div class="wizard-steps">
+      <div class="ws-step"><div class="ws-dot active">1</div></div>
+      <div class="ws-line"></div>
+      <div class="ws-step"><div class="ws-dot">2</div></div>
+      <div class="ws-line"></div>
+      <div class="ws-step"><div class="ws-dot">3</div></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Select Platform</label>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;" id="platformPicker">
+        ${[
+          {key:'openai',  label:'OpenAI',    icon:'&#x1F916;'},
+          {key:'anthropic',label:'Anthropic',icon:'&#x1F9E0;'},
+          {key:'aws',     label:'AWS',       icon:'&#x2601;'},
+          {key:'vercel',  label:'Vercel',    icon:'&#x25B2;'},
+          {key:'supabase',label:'Supabase',  icon:'&#x1F418;'},
+          {key:'twilio',  label:'Twilio',    icon:'&#x1F4F1;'}
+        ].map(p=>`
+          <div class="platform-pick-btn" data-pid="${p.key}" onclick="selectPlatformConnect(this)" style="background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:12px 8px;text-align:center;cursor:pointer;font-family:var(--font-mono);font-size:11px;transition:all 0.2s;">${p.icon} ${p.label}</div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Admin API Key</label>
+      <input class="form-input" type="password" placeholder="sk-admin-..." id="apiKeyInput"/>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Hourly Limit ($)</label>
+        <input class="form-input" type="number" placeholder="200" id="hourlyInput"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Daily Budget ($)</label>
+        <input class="form-input" type="number" placeholder="500" id="dailyInput"/>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="testAndConnect()">Test Connection →</button>
+    </div>
+  `);
+}
+
+function selectPlatformConnect(el) {
+  document.querySelectorAll('.platform-pick-btn').forEach(e => {
+    e.style.borderColor = 'var(--border)'; e.style.background = 'var(--panel)'; e.style.color = '';
+  });
+  el.style.borderColor = 'rgba(255,26,46,0.4)';
+  el.style.background = 'rgba(255,26,46,0.08)';
+  el.style.color = 'var(--kill)';
+}
+
+function testAndConnect() {
+  const btn = document.querySelector('#modalContent .btn-primary');
+  if (btn) { btn.textContent = '⟳ Testing...'; btn.disabled = true; }
+  setTimeout(() => {
+    closeModal();
+    showToast('safe', '✓ Platform connected', 'Monitoring active');
+    addActivity('safe', 'New Platform', 'Platform connected and polling started', 0);
+  }, 1500);
+}
+
+function openPlatformDetail(id) {
+  const p = PLATFORMS.find(x=>x.id===id);
+  if (!p) return;
+  const pct = Math.min(1, p.burnRate / p.threshold);
+  showModal(`
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+      <div style="width:44px;height:44px;background:${p.color}22;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;">${p.icon}</div>
+      <div>
+        <div class="modal-title" style="margin-bottom:2px;">${p.name}</div>
+        <div class="modal-sub" style="margin:0;">${p.env} · ${p.state.toUpperCase()}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;">
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-bottom:6px;">BURN RATE</div>
+        <div style="font-family:var(--font-display);font-size:28px;font-weight:800;color:${p.state==='danger'?'var(--kill)':p.state==='warn'?'var(--warn)':'var(--safe)'};">$${p.burnRate.toFixed(2)}</div>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);">per hour</div>
+      </div>
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;">
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-bottom:6px;">TODAY'S SPEND</div>
+        <div style="font-family:var(--font-display);font-size:28px;font-weight:800;color:var(--cyan);">$${p.spent.toFixed(2)}</div>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);">of $${p.dailyBudget} budget</div>
+      </div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:16px;">
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;">Distance to Threshold</div>
+      <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin-bottom:8px;">
+        <div style="height:100%;width:${pct*100}%;background:${pct>0.9?'var(--kill)':pct>0.65?'var(--warn)':'var(--safe)'};border-radius:4px;transition:width 1s;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:10px;color:var(--muted);">
+        <span>$0</span>
+        <span style="color:white;">${Math.round(pct*100)}% used</span>
+        <span>$${p.threshold}/hr</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Close</button>
+      ${p.killed
+        ? `<button class="btn-primary" style="background:linear-gradient(135deg,var(--safe2),var(--safe));color:black;" onclick="restorePlatform('${p.id}')">↺ Restore Service</button>`
+        : `<button class="btn-primary" onclick="killSingle('${p.id}')">⚡ Kill This Platform</button>`
+      }
+    </div>
+  `);
+}
+
+function killSingle(id) {
+  const p = PLATFORMS.find(x=>x.id===id);
+  if (!p) return;
+  const saved = p.burnRate * 24;
+  logIncident(p, saved);
+  p.killed = true; p.state = 'killed'; p.burnRate = 0;
+  lifetimeSaved += saved;
+  killHistory.unshift({ time: new Date().toLocaleTimeString('en-US',{hour12:false}), platform: p.name, saved });
+  if (killHistory.length > 5) killHistory.pop();
+  closeModal();
+  showToast('safe', `✓ ${p.name} killed`, `$${saved.toFixed(0)} projected saved`);
+  addActivity('kill', p.name, 'Kill switch executed', saved/24);
+  updateKillHistory();
+}
+
+function restorePlatform(id) {
+  const p = PLATFORMS.find(x=>x.id===id);
+  if (!p) return;
+  resolveIncident(id);
+  p.killed = false; p.state = 'safe';
+  closeModal();
+  showToast('warn', `↺ ${p.name} restored`, 'Monitoring resumed');
+  addActivity('safe', p.name, 'Service restored', 0);
+}
+
+/* ─────────────────────────────────────────────
+   TOASTS
+───────────────────────────────────────────── */
+function showToast(type, msg, sub) {
+  const container = document.getElementById('toasts');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  const icons = { kill:'⚡', safe:'✓', warn:'▲' };
+  t.innerHTML = `<span class="toast-icon">${icons[type]||'●'}</span><div class="toast-msg"><div>${msg}</div><div style="font-size:10px;color:var(--muted);margin-top:2px;">${sub}</div></div><span class="toast-time">${new Date().toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit'})}</span>`;
+  container.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateX(20px)'; t.style.transition = 'all 0.3s'; setTimeout(()=>t.remove(), 300); }, 4000);
+}
+
+/* ─────────────────────────────────────────────
+   RIPPLE
+───────────────────────────────────────────── */
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.kill-btn-armed,.btn-primary');
+  if (!btn) return;
+  const r = document.createElement('span');
+  r.className = 'kb-ripple';
+  const rect = btn.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height);
+  r.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX-rect.left-size/2}px;top:${e.clientY-rect.top-size/2}px;`;
+  btn.appendChild(r);
+  setTimeout(() => r.remove(), 600);
+});
+
+/* ─────────────────────────────────────────────
+   PAGE NAV
+───────────────────────────────────────────── */
+function setPage(page, btn) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const titles = { dashboard:'Command Center', platforms:'Platform Management', incidents:'Incident History', settings:'Threshold Config' };
+  document.querySelector('.page-title').textContent = titles[page] || 'Command Center';
+  // Show/hide sections
+  document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
+  const map = { dashboard:'page-dashboard', platforms:'page-platforms', incidents:'page-incidents', settings:'page-thresholds' };
+  const el = document.getElementById(map[page] || 'page-dashboard');
+  if (el) el.classList.add('active');
+  // Render page content
+  if (page === 'platforms') renderPlatformsFull();
+  if (page === 'incidents') renderIncidentsPage();
+  if (page === 'settings') renderThresholds();
+}
+
+/* ─────────────────────────────────────────────
+   PLATFORMS FULL PAGE
+───────────────────────────────────────────── */
+function renderPlatformsFull() {
+  const grid = document.getElementById('platformFullGrid');
+  if (!grid) return;
+  grid.innerHTML = PLATFORMS.map(p => {
+    const pct = p.killed ? 0 : Math.min(1, p.burnRate / p.threshold);
+    const stateClass = p.killed ? 'pf-killed' : p.state === 'danger' ? 'pf-danger' : p.state === 'warn' ? 'pf-warn' : 'pf-safe';
+    const stateColor = p.killed ? 'var(--muted)' : p.state === 'danger' ? 'var(--kill)' : p.state === 'warn' ? 'var(--warn)' : 'var(--safe)';
+    const stateText = p.killed ? 'KILLED' : p.state.toUpperCase();
+    const fillClass = p.killed ? 'safe' : p.state === 'danger' ? 'danger' : p.state === 'warn' ? 'warn' : 'safe';
+    const budgetPct = Math.min(100, (p.spent / p.dailyBudget) * 100);
+    return `<div class="pf-card ${stateClass}">
+      <div class="pf-top">
+        <div class="pf-identity">
+          <div class="pf-ico" style="background:${p.color}20;">${p.icon}</div>
+          <div>
+            <div class="pf-name">${p.name}</div>
+            <span class="pf-env-tag">${p.env}</span>
+          </div>
+        </div>
+        <div class="pc-state ${p.killed?'state-killed':p.state==='danger'?'state-danger':p.state==='warn'?'state-warn':'state-safe'}">${stateText}</div>
+      </div>
+      <div class="pf-stats">
+        <div class="pf-stat">
+          <div class="pf-stat-label">Burn Rate</div>
+          <div class="pf-stat-val" style="color:${stateColor};">${p.killed?'—':'$'+p.burnRate.toFixed(1)}<span style="font-size:11px;color:var(--muted);font-weight:400;">/hr</span></div>
+        </div>
+        <div class="pf-stat">
+          <div class="pf-stat-label">Today</div>
+          <div class="pf-stat-val" style="color:var(--cyan);">$${p.spent.toFixed(0)}</div>
+        </div>
+        <div class="pf-stat">
+          <div class="pf-stat-label">Threshold</div>
+          <div class="pf-stat-val" style="color:var(--muted);">$${p.threshold}</div>
+        </div>
+      </div>
+      <div class="pf-gauge-row">
+        <div class="tg-header">
+          <div class="tg-label">Hourly usage</div>
+          <div class="tg-distance" style="color:${stateColor};">${Math.round(pct*100)}% of limit</div>
+        </div>
+        <div class="tg-track" style="margin-bottom:10px;">
+          <div class="tg-fill ${fillClass}" style="width:${pct*100}%"></div>
+        </div>
+        <div class="tg-header">
+          <div class="tg-label">Daily budget</div>
+          <div class="tg-distance" style="color:var(--cyan);">$${p.spent.toFixed(0)} / $${p.dailyBudget}</div>
+        </div>
+        <div class="tg-track">
+          <div class="tg-fill ${budgetPct>80?'danger':budgetPct>55?'warn':'safe'}" style="width:${budgetPct}%"></div>
+        </div>
+      </div>
+      <div class="pf-actions">
+        <button class="pf-btn" onclick="openPlatformDetail('${p.id}')">Details</button>
+        <button class="pf-btn" onclick="event.stopPropagation();testConn('${p.id}',this)">Test</button>
+        ${p.killed
+          ? `<button class="pf-btn pf-restore" onclick="restorePlatform('${p.id}')">↺ Restore</button>`
+          : `<button class="pf-btn pf-kill" onclick="killSingle('${p.id}')">⚡ Kill</button>`
+        }
+      </div>
+      <div class="pf-polled">Last polled: ${new Date().toLocaleTimeString('en-US',{hour12:false})} · Circuit breaker: ${p.killed?'OPEN':'CLOSED'}</div>
+    </div>`;
+  }).join('');
+}
+
+function testConn(id, btn) {
+  btn.textContent = '⟳ Testing...';
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = '✓ OK';
+    btn.style.color = 'var(--safe)';
+    btn.style.borderColor = 'rgba(0,255,106,0.3)';
+    setTimeout(() => { btn.textContent = 'Test'; btn.disabled = false; btn.style.color=''; btn.style.borderColor=''; }, 2000);
+  }, 1200);
+}
+
+/* ─────────────────────────────────────────────
+   INCIDENTS PAGE
+───────────────────────────────────────────── */
+const INCIDENTS = [];
+let incidentFilter = 'all';
+
+function logIncident(p, saved) {
+  INCIDENTS.unshift({
+    id: 'INC-' + String(INCIDENTS.length+1).padStart(3,'0'),
+    platform: p,
+    time: new Date(),
+    trigger: p.burnRate > p.threshold * 0.95 ? 'HOURLY_LIMIT' : 'SPIKE_DETECTED',
+    burnRate: p.burnRate,
+    saved: saved,
+    duration: null,
+    status: 'active'
+  });
+}
+
+function resolveIncident(platformId) {
+  const inc = INCIDENTS.find(i => i.platform.id === platformId && i.status === 'active');
+  if (inc) {
+    inc.status = 'resolved';
+    inc.duration = Math.round((new Date() - inc.time) / 1000);
+  }
+}
+
+function filterIncidents(f, btn) {
+  incidentFilter = f;
+  document.querySelectorAll('.inc-filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderIncidentsPage();
+}
+
+function renderIncidentsPage() {
+  const tbody = document.getElementById('incidentsTableBody');
+  if (!tbody) return;
+  // Update stats
+  const totalSaved = INCIDENTS.reduce((s,i)=>s+i.saved,0);
+  const thisMonth = INCIDENTS.filter(i=>i.time.getMonth()===new Date().getMonth()).length;
+  const el1=document.getElementById('isc-saved'); if(el1) el1.textContent='$'+totalSaved.toFixed(0);
+  const el2=document.getElementById('isc-total'); if(el2) el2.textContent=INCIDENTS.length;
+  const el3=document.getElementById('isc-month'); if(el3) el3.textContent=thisMonth;
+
+  const filtered = INCIDENTS.filter(i => {
+    if (incidentFilter === 'all') return true;
+    if (incidentFilter === 'active') return i.status === 'active';
+    if (incidentFilter === 'resolved') return i.status === 'resolved';
+    return i.platform.id === incidentFilter;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="inc-empty">${INCIDENTS.length===0 ? 'No incidents recorded yet. Circuit breakers are armed and monitoring.' : 'No incidents match this filter.'}</td></tr>`;
+    return;
+  }
+
+  const trigLabels = { HOURLY_LIMIT:'Hourly Limit', SPIKE_DETECTED:'Spike Detected', DAILY_LIMIT:'Daily Budget' };
+  tbody.innerHTML = filtered.map(inc => {
+    const dur = inc.duration ? (inc.duration < 60 ? inc.duration+'s' : Math.round(inc.duration/60)+'m') : (inc.status==='active'?'<span style="color:var(--kill);font-family:var(--font-mono);font-size:10px;animation:blink-danger 0.8s infinite;">LIVE</span>':'—');
+    const statusBadge = inc.status==='active' ? '<span class="inc-badge ib-active">ACTIVE</span>' : inc.status==='restoring' ? '<span class="inc-badge ib-restoring">RESTORING</span>' : '<span class="inc-badge ib-resolved">RESOLVED</span>';
+    return `<tr>
+      <td style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">${inc.time.toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit'})}<br><span style="font-size:9px;color:var(--muted2);">${inc.id}</span></td>
+      <td><div class="inc-platform-pill">${inc.platform.icon} ${inc.platform.name}</div></td>
+      <td style="font-family:var(--font-mono);font-size:10px;color:var(--muted);">${trigLabels[inc.trigger]||inc.trigger}</td>
+      <td style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--kill);">$${inc.burnRate.toFixed(1)}<span style="font-size:10px;color:var(--muted);font-weight:400;">/hr</span></td>
+      <td style="font-family:var(--font-mono);font-size:11px;">${dur}</td>
+      <td style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--safe);">$${inc.saved.toFixed(0)}</td>
+      <td>${statusBadge}</td>
+      <td><button class="pf-btn" style="padding:5px 10px;font-size:9px;" onclick="viewIncident('${inc.id}')">View</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function viewIncident(id) {
+  const inc = INCIDENTS.find(i=>i.id===id);
+  if (!inc) return;
+  showModal(`
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+      <div style="width:36px;height:36px;background:rgba(255,26,46,0.1);border:1px solid rgba(255,26,46,0.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;">⚡</div>
+      <div>
+        <div class="modal-title" style="font-size:16px;">Incident ${inc.id}</div>
+        <div class="modal-sub" style="margin:0;">${inc.platform.icon} ${inc.platform.name} · ${inc.time.toLocaleString()}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;">
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-bottom:6px;">BURN RATE AT KILL</div>
+        <div style="font-family:var(--font-display);font-size:26px;font-weight:800;color:var(--kill);">$${inc.burnRate.toFixed(2)}/hr</div>
+      </div>
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;">
+        <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-bottom:6px;">ESTIMATED SAVED</div>
+        <div style="font-family:var(--font-display);font-size:26px;font-weight:800;color:var(--safe);">$${inc.saved.toFixed(0)}</div>
+      </div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;font-family:var(--font-mono);font-size:11px;line-height:2;">
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Trigger</span><span>${inc.trigger}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Status</span><span style="color:${inc.status==='active'?'var(--kill)':'var(--safe)'};">${inc.status.toUpperCase()}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Duration</span><span>${inc.duration ? inc.duration+'s' : 'Ongoing'}</span></div>
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn-secondary" onclick="closeModal()">Close</button>
+      ${inc.status==='active'?`<button class="btn-primary" style="background:linear-gradient(135deg,var(--safe2),var(--safe));color:black;" onclick="restorePlatform('${inc.platform.id}');closeModal();">↺ Restore Service</button>`:''}
+    </div>
+  `);
+}
+
+function exportIncidents() {
+  if (INCIDENTS.length === 0) { showToast('warn','No incidents to export','Record some events first'); return; }
+  const rows = [['ID','Platform','Time','Trigger','Burn Rate','Saved','Duration','Status']];
+  INCIDENTS.forEach(i=>rows.push([i.id,i.platform.name,i.time.toISOString(),i.trigger,i.burnRate.toFixed(2),i.saved.toFixed(0),i.duration||'',i.status]));
+  const csv = rows.map(r=>r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'costguard-incidents.csv';
+  a.click();
+  showToast('safe','CSV exported','Download started');
+}
+
+/* ─────────────────────────────────────────────
+   THRESHOLDS PAGE
+───────────────────────────────────────────── */
+function renderThresholds() {
+  const grid = document.getElementById('thresholdGrid');
+  if (!grid) return;
+  grid.innerHTML = PLATFORMS.map(p => {
+    const sliderPct = Math.min(100, (p.burnRate / p.threshold) * 100);
+    const sliderClass = sliderPct > 80 ? 'danger' : sliderPct > 55 ? 'warn' : 'safe';
+    return `<div class="thresh-card">
+      <div class="tc-header">
+        <div class="tc-platform">
+          <div class="pf-ico" style="background:${p.color}20;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;">${p.icon}</div>
+          <div class="tc-name">${p.name}</div>
+        </div>
+        <div class="pc-state ${p.killed?'state-killed':p.state==='danger'?'state-danger':p.state==='warn'?'state-warn':'state-safe'}">${p.killed?'KILLED':p.state.toUpperCase()}</div>
+      </div>
+      <div class="tc-body">
+        <div class="tc-field">
+          <div class="tc-label">Hourly Kill Limit <span id="slider-val-${p.id}">$${p.threshold}/hr</span></div>
+          <input type="range" class="tc-slider ${sliderClass}" min="5" max="1000" value="${p.threshold}"
+            id="slider-${p.id}"
+            oninput="updateSlider('${p.id}',this.value)"
+            style="background:linear-gradient(90deg,var(--${sliderClass==='danger'?'kill':sliderClass==='warn'?'warn':'safe'}) ${sliderPct}%,var(--border) ${sliderPct}%);">
+        </div>
+        <div class="tc-row">
+          <div class="tc-field" style="margin-bottom:0;">
+            <div class="tc-label">Daily Budget</div>
+            <div class="tc-input-wrap">
+              <span class="tc-prefix">$</span>
+              <input class="tc-input" type="number" value="${p.dailyBudget}" id="daily-${p.id}" min="1" placeholder="500">
+            </div>
+          </div>
+          <div class="tc-field" style="margin-bottom:0;">
+            <div class="tc-label">Monthly Cap</div>
+            <div class="tc-input-wrap">
+              <span class="tc-prefix">$</span>
+              <input class="tc-input" type="number" value="${p.dailyBudget*30}" id="monthly-${p.id}" min="1" placeholder="5000">
+            </div>
+          </div>
+        </div>
+        <div class="divider" style="height:1px;background:var(--border);margin:16px 0;"></div>
+        <div class="tc-toggle-row">
+          <div class="tc-toggle-label">Auto Kill Switch</div>
+          <button class="toggle-switch on" id="ts-autokill-${p.id}" onclick="toggleGS(this)"></button>
+        </div>
+        <div class="tc-toggle-row">
+          <div class="tc-toggle-label">Anomaly Detection (Z-Score)</div>
+          <button class="toggle-switch on" id="ts-anomaly-${p.id}" onclick="toggleGS(this)"></button>
+        </div>
+        <div class="tc-toggle-row">
+          <div class="tc-toggle-label">Predictive Warning at 70%</div>
+          <button class="toggle-switch on" id="ts-predict-${p.id}" onclick="toggleGS(this)"></button>
+        </div>
+      </div>
+      <div class="tc-alerts">
+        <div class="tc-alert-label">Alert Channels</div>
+        <div class="tc-alert-channels">
+          <button class="tc-channel on" onclick="this.classList.toggle('on')">📧 Email</button>
+          <button class="tc-channel on" onclick="this.classList.toggle('on')">💬 Slack</button>
+          <button class="tc-channel" onclick="this.classList.toggle('on')">🔗 Webhook</button>
+          <button class="tc-channel" onclick="this.classList.toggle('on')">📱 SMS</button>
+        </div>
+      </div>
+      <div class="tc-save-row">
+        <button class="tc-reset" onclick="resetThreshold('${p.id}')">Reset</button>
+        <button class="tc-save" onclick="saveThreshold('${p.id}')">Save Changes</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateSlider(id, val) {
+  const el = document.getElementById('slider-val-'+id);
+  if (el) el.textContent = '$'+val+'/hr';
+  const slider = document.getElementById('slider-'+id);
+  const p = PLATFORMS.find(x=>x.id===id);
+  if (!slider || !p) return;
+  const pct = Math.min(100, (p.burnRate / parseFloat(val)) * 100);
+  const cls = pct > 80 ? 'kill' : pct > 55 ? 'warn' : 'safe';
+  slider.style.background = `linear-gradient(90deg,var(--${cls}) ${pct}%,var(--border) ${pct}%)`;
+}
+
+function saveThreshold(id) {
+  const p = PLATFORMS.find(x=>x.id===id);
+  if (!p) return;
+  const slider = document.getElementById('slider-'+id);
+  const daily = document.getElementById('daily-'+id);
+  if (slider) p.threshold = parseFloat(slider.value);
+  if (daily) p.dailyBudget = parseFloat(daily.value);
+  showToast('safe', `✓ ${p.name} thresholds saved`, `Kill at $${p.threshold}/hr · Budget $${p.dailyBudget}/day`);
+}
+
+function resetThreshold(id) {
+  const defaults = { openai:200, anthropic:150, aws:300, vercel:50, supabase:80, twilio:100 };
+  const budgets = { openai:500, anthropic:300, aws:800, vercel:100, supabase:200, twilio:250 };
+  const p = PLATFORMS.find(x=>x.id===id);
+  if (!p) return;
+  p.threshold = defaults[id] || 200;
+  p.dailyBudget = budgets[id] || 500;
+  renderThresholds();
+  showToast('warn', `↺ ${p.name} reset to defaults`, '');
+}
+
+function toggleGS(btn) {
+  btn.classList.toggle('on');
+}
+
+/* ─────────────────────────────────────────────
+   THEME
+───────────────────────────────────────────── */
+function setTheme(mode) {
+  document.documentElement.setAttribute('data-theme', mode);
+  localStorage.setItem('cg-theme', mode);
+  const dark = document.getElementById('ttDark');
+  const light = document.getElementById('ttLight');
+  if (!dark || !light) return;
+  if (mode === 'light') {
+    dark.classList.remove('active');
+    light.classList.add('active');
+    dark.style.color = '';
+    light.style.color = '';
+  } else {
+    light.classList.remove('active');
+    dark.classList.add('active');
+  }
+  // Redraw chart with new theme colors
+  setTimeout(drawChart, 50);
+}
+
+// Apply saved theme immediately
+(function() {
+  const saved = localStorage.getItem('cg-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  if (saved === 'light') {
+    // Defer until DOM ready
+    document.addEventListener('DOMContentLoaded', () => setTheme('light'));
+    setTimeout(() => setTheme('light'), 0);
+  }
+})();
+
+/* ─────────────────────────────────────────────
+   INIT & LOOP
+───────────────────────────────────────────── */
+window.addEventListener('resize', resizeChart);
+
+// INIT
+renderPlatformCards();
+initChart();
+
+// Seed some initial activity
+addActivity('safe', 'OpenAI', 'Platform polling started', 0);
+addActivity('safe', 'AWS', 'Circuit breaker armed — threshold $300/hr', 0);
+addActivity('safe', 'Anthropic', 'Platform polling started', 0);
+
+// Initial tick
+setTimeout(() => {
+  tick();
+  setInterval(tick, 800); // fast for demo; in prod this is every 60s
+}, 500);
+
+// Chart resize on load
+setTimeout(resizeChart, 100);
+
+console.log('%c⚡ CostGuard Dashboard Loaded','color:#FF1A2E;font-size:16px;font-weight:bold;');
+console.log('%cAll circuit breakers armed. Monitoring active.','color:#00FF6A;font-size:12px;');
+</script>
+</body>
+</html>

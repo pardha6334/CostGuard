@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --void: #03030A;
+  --deep: #07070F;
+  --surface: #111122;
+  --panel: #14142A;
+  --border: #1C1C38;
+  --border2: #252545;
+  --kill: #FF1A2E;
+  --kill2: #CC0F20;
+  --kill-glow: rgba(255,26,46,0.4);
+  --safe: #00FF6A;
+  --safe2: #00CC55;
+  --safe-glow: rgba(0,255,106,0.3);
+  --warn: #FFB800;
+  --warn2: #CC9200;
+  --warn-glow: rgba(255,184,0,0.3);
+  --cyan: #00E5FF;
+  --text: #E0E0FF;
+  --muted: #5A5A88;
+  --muted2: #3A3A60;
+}
+
+html[data-theme="light"] {
+  --void: #F0F0F8;
+  --deep: #E8E8F4;
+  --surface: #FFFFFF;
+  --panel: #F5F5FC;
+  --border: #D8D8EC;
+  --border2: #C8C8E0;
+  --kill: #D4001F;
+  --kill2: #A8001A;
+  --kill-glow: rgba(212,0,31,0.25);
+  --safe: #007A3D;
+  --safe2: #005C2E;
+  --safe-glow: rgba(0,122,61,0.2);
+  --warn: #B87800;
+  --warn2: #8C5C00;
+  --warn-glow: rgba(184,120,0,0.2);
+  --cyan: #006B8F;
+  --text: #12122A;
+  --muted: #606080;
+  --muted2: #9898B8;
+}
+
+body {
+  background: var(--void);
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  transition: background 0.3s, color 0.3s;
+}

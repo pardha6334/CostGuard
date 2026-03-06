@@ -1,0 +1,122 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  plan        Plan      @default(TRIAL)
+  trialEndsAt DateTime?
+  stripeId    String?   @unique
+  slackWebhook String?
+  platforms   Platform[]
+  incidents   Incident[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Platform {
+  id              String        @id @default(cuid())
+  userId          String
+  provider        Provider
+  encryptedCreds  String        // AES-256-GCM encrypted JSON
+  displayName     String?       // user label e.g. "prod-openai"
+  environment     String        @default("production")
+  hourlyLimit     Float         @default(200)
+  dailyBudget     Float         @default(500)
+  monthlyBudget   Float         @default(5000)
+  breakerState    BreakerState  @default(CLOSED)
+  isActive        Boolean       @default(true)
+  autoKill        Boolean       @default(true)
+  anomalyDetect   Boolean       @default(true)
+  alertEmail      Boolean       @default(true)
+  alertSlack      Boolean       @default(true)
+  alertWebhook    Boolean       @default(false)
+  lastPolledAt    DateTime?
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readings        SpendReading[]
+  incidents       Incident[]
+
+  @@index([userId, isActive])
+  @@index([userId, provider])
+}
+
+model SpendReading {
+  id          String   @id @default(cuid())
+  platformId  String
+  amount      Float    // cumulative spend in $
+  burnRate    Float    // calculated $/hr
+  recordedAt  DateTime @default(now())
+  platform    Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  @@index([platformId, recordedAt])
+}
+
+model Incident {
+  id              String         @id @default(cuid())
+  userId          String
+  platformId      String
+  triggerType     TriggerType
+  spendAtTrigger  Float
+  burnRateAtKill  Float
+  thresholdLimit  Float
+  estimatedSaved  Float          @default(0)
+  status          IncidentStatus @default(ACTIVE)
+  killedAt        DateTime       @default(now())
+  resolvedAt      DateTime?
+  resolvedByUserId String?
+  durationSecs    Int?
+  notes           String?
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform        Platform       @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([userId, killedAt])
+}
+
+enum Plan {
+  TRIAL
+  STARTER
+  PRO
+  TEAM
+}
+
+enum Provider {
+  OPENAI
+  ANTHROPIC
+  AWS
+  VERCEL
+  SUPABASE
+  GCP
+  AZURE
+  CLOUDFLARE
+  TWILIO
+  REPLICATE
+}
+
+enum BreakerState {
+  CLOSED
+  OPEN
+  HALF_OPEN
+}
+
+enum TriggerType {
+  HOURLY_LIMIT
+  DAILY_LIMIT
+  SPIKE_DETECTED
+  MANUAL
+}
+
+enum IncidentStatus {
+  ACTIVE
+  RESTORING
+  RESOLVED
+}

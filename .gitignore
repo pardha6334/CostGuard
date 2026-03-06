@@ -1,0 +1,24 @@
+# Dependencies
+node_modules
+
+# Local env files (secrets — never commit)
+.env
+.env.local
+.env*.local
+vercel-env-reference.md
+
+# Next.js build output
+.next
+out
+
+# OS / IDE / Cursor
+.DS_Store
+*.pem
+.idea
+.vscode
+.cursor
+
+# Vercel
+.vercel
+
+.vercel
