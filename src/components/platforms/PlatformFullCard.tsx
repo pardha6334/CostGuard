@@ -30,6 +30,7 @@ const STATE_BADGE: Record<string, { color: string; bg: string; border: string; l
 export default function PlatformFullCard({ platform, onKill, onRestore, onMutate }: PlatformFullCardProps) {
   const [isActing, setIsActing] = useState(false)
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null)
+  const [testLatency, setTestLatency] = useState<number | null>(null)
 
   const state = getPlatformState(platform)
   const icon = PROVIDER_ICONS[platform.provider] ?? '●'
@@ -51,11 +52,13 @@ export default function PlatformFullCard({ platform, onKill, onRestore, onMutate
   const handleTestConnection = async () => {
     setIsActing(true)
     setTestResult(null)
+    setTestLatency(null)
     try {
-      // Simple ping via re-fetching the platform list
-      const res = await fetch('/api/platforms')
-      setTestResult(res.ok ? 'ok' : 'fail')
-      setTimeout(() => setTestResult(null), 3000)
+      const res = await fetch(`/api/platforms/${platform.id}/test`, { method: 'POST' })
+      const json = await res.json()
+      setTestResult(json.ok ? 'ok' : 'fail')
+      if (json.latencyMs) setTestLatency(json.latencyMs)
+      setTimeout(() => { setTestResult(null); setTestLatency(null) }, 4000)
     } catch {
       setTestResult('fail')
     } finally {
@@ -245,7 +248,11 @@ export default function PlatformFullCard({ platform, onKill, onRestore, onMutate
             color: testResult === 'ok' ? 'var(--safe)' : testResult === 'fail' ? 'var(--kill)' : 'var(--muted)',
           }}
         >
-          {testResult === 'ok' ? '✓ OK' : testResult === 'fail' ? '✗ Fail' : '◎ Test'}
+          {testResult === 'ok'
+            ? `✓ OK${testLatency ? ` ${testLatency}ms` : ''}`
+            : testResult === 'fail'
+            ? '✗ Unreachable'
+            : '◎ Test'}
         </button>
       </div>
 
