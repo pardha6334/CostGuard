@@ -13,6 +13,7 @@ const AddSchema = z.object({
   credentials: z.record(z.string(), z.string()),
   hourlyLimit: z.number().min(1),
   dailyBudget: z.number().min(1),
+  creditBalance: z.number().min(0).optional().nullable(),
   displayName: z.string().optional(),
 })
 
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
     where,
     select: {
       id: true, provider: true, displayName: true, environment: true,
-      hourlyLimit: true, dailyBudget: true, monthlyBudget: true,
+      hourlyLimit: true, dailyBudget: true, monthlyBudget: true, creditBalance: true,
       breakerState: true, isActive: true, autoKill: true,
       anomalyDetect: true, alertEmail: true, alertSlack: true, alertWebhook: true,
       lastPolledAt: true,
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
   const parsed = AddSchema.safeParse(await req.json())
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { provider, credentials, hourlyLimit, dailyBudget, displayName } = parsed.data
+  const { provider, credentials, hourlyLimit, dailyBudget, creditBalance, displayName } = parsed.data
 
   // Test connection before saving anything
   try {
@@ -103,6 +104,7 @@ export async function POST(req: NextRequest) {
       hourlyLimit,
       dailyBudget,
       monthlyBudget: dailyBudget * 30,
+      creditBalance: creditBalance ?? null,
       displayName: displayName ?? provider,
     },
     select: { id: true, provider: true, displayName: true, breakerState: true },

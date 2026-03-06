@@ -9,6 +9,7 @@ export interface Platform {
   hourlyLimit: number
   dailyBudget: number
   monthlyBudget: number
+  creditBalance: number | null  // prepaid credits loaded (e.g. OpenAI $5); null = not tracked
   breakerState: 'CLOSED' | 'OPEN' | 'HALF_OPEN'
   isActive: boolean
   autoKill: boolean
