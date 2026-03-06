@@ -20,24 +20,40 @@ export class OpenAIAdapter implements PlatformAdapter {
       const startSec = Math.floor(startOfMonth.getTime() / 1000);
       const endSec = Math.floor(now.getTime() / 1000);
       const authHeader = { Authorization: `Bearer ${this.creds.adminKey}` };
-      type Bucket = { result?: Array<{ amount?: { value?: number } }> };
+      const projectId = this.creds.projectId;
+      // API returns data[] of buckets; each bucket has "results" (plural). amount.value can be string or number.
+      // Working request: start_time, end_time, bucket_width=1d, limit=31 (no group_by, no project_ids).
+      // Filter by project_id when summing so we only count this platform's spend.
+      // Only sum results that match our project_id (or have no project_id, for backwards compatibility).
+      type ResultItem = {
+        amount?: { value?: number | string } | number;
+        project_id?: string | null;
+      };
+      type Bucket = { result?: ResultItem[]; results?: ResultItem[] };
       let total = 0;
       let page: string | null = null;
-      const maxPages = 20; // guard against API returning has_more without next_page
+      const maxPages = 20;
       let pageCount = 0;
       do {
         if (++pageCount > maxPages) break;
         const query = `start_time=${startSec}&end_time=${endSec}` +
-          `&project_ids=${encodeURIComponent(this.creds.projectId)}` +
-          `&limit=35` + (page ? `&page=${encodeURIComponent(page)}` : '');
+          `&bucket_width=1d` +
+          `&limit=31` + (page ? `&page=${encodeURIComponent(page)}` : '');
         const res = await fetch(`https://api.openai.com/v1/organization/costs?${query}`, { headers: authHeader });
         if (!res.ok) throw new Error(`OpenAI spend API ${res.status}`);
         const data = await res.json() as { data?: Bucket[]; next_page?: string; has_more?: boolean };
-        const amount = (data.data ?? []).reduce(
-          (sum, bucket) => sum + (bucket.result ?? []).reduce((s, r) => s + (r.amount?.value ?? 0), 0),
-          0
-        );
-        total += amount;
+        const items = (bucket: Bucket) => bucket.results ?? bucket.result ?? [];
+        const pageTotal = (data.data ?? []).reduce((sum, bucket) => {
+          return sum + items(bucket).reduce((s, r) => {
+            if (r.project_id != null && r.project_id !== projectId) return s; // skip other projects
+            const amt = r.amount;
+            if (amt == null) return s;
+            const rawVal = typeof amt === 'number' ? amt : (amt as { value?: number | string }).value;
+            const val = typeof rawVal === 'string' ? parseFloat(rawVal) : rawVal;
+            return s + (typeof val === 'number' && !Number.isNaN(val) ? val : 0);
+          }, 0);
+        }, 0);
+        total += pageTotal;
         page = data.has_more && data.next_page ? data.next_page : null;
       } while (page);
       return { amount: total, period: 'monthly', currency: 'usd' };
