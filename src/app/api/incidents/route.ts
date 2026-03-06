@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/db'
+import type { Prisma } from '@prisma/client'
+import { IncidentStatus } from '@prisma/client'
 
 export async function GET(req: NextRequest) {
   const supabase = createClient()
@@ -14,15 +16,9 @@ export async function GET(req: NextRequest) {
   const platformId = searchParams.get('platformId')
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 200)
 
-  const where: {
-    userId: string
-    status?: string
-    platformId?: string
-    id?: { not: { startsWith: string } }
-  } = {
+  const where: Prisma.IncidentWhereInput = {
     userId: user.id,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ...(status ? { status: status as any } : {}),
+    ...(status ? { status: status as IncidentStatus } : {}),
     ...(platformId ? { platformId } : {}),
   }
   // In production, hide dev-seeded incidents (id starts with dev-inc-)
