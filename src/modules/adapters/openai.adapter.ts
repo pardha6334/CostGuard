@@ -15,12 +15,17 @@ export class OpenAIAdapter implements PlatformAdapter {
 
   async getSpend(): Promise<SpendData> {
     return withRetry(async () => {
+      const tag = `[OPENAI:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       const startSec = Math.floor(startOfMonth.getTime() / 1000);
       const endSec = Math.floor(now.getTime() / 1000);
       const authHeader = { Authorization: `Bearer ${this.creds.adminKey}` };
       const projectId = this.creds.projectId;
+
+      console.log(`${tag} 📅 Date range: ${startOfMonth.toISOString().split('T')[0]} → ${now.toISOString().split('T')[0]} (${startSec} → ${endSec})`);
+      console.log(`${tag} 🔑 Using key: sk-...${this.creds.adminKey?.slice(-6) ?? 'MISSING'} | projectId: ${projectId ?? 'MISSING'}`);
+
       // API returns data[] of buckets; each bucket has "results" (plural). amount.value can be string or number.
       // Working request: start_time, end_time, bucket_width=1d, limit=31 (no group_by, no project_ids).
       // Filter by project_id when summing so we only count this platform's spend.
@@ -29,33 +34,64 @@ export class OpenAIAdapter implements PlatformAdapter {
         amount?: { value?: number | string } | number;
         project_id?: string | null;
       };
-      type Bucket = { result?: ResultItem[]; results?: ResultItem[] };
+      type Bucket = { result?: ResultItem[]; results?: ResultItem[]; start_time_iso?: string; end_time_iso?: string };
       let total = 0;
       let page: string | null = null;
       const maxPages = 20;
       let pageCount = 0;
       do {
-        if (++pageCount > maxPages) break;
+        if (++pageCount > maxPages) {
+          console.warn(`${tag} ⚠️  Hit maxPages limit (${maxPages}) — stopping pagination`);
+          break;
+        }
         const query = `start_time=${startSec}&end_time=${endSec}` +
           `&bucket_width=1d` +
           `&limit=31` + (page ? `&page=${encodeURIComponent(page)}` : '');
-        const res = await fetch(`https://api.openai.com/v1/organization/costs?${query}`, { headers: authHeader });
-        if (!res.ok) throw new Error(`OpenAI spend API ${res.status}`);
+        const url = `https://api.openai.com/v1/organization/costs?${query}`;
+        console.log(`${tag} 🌐 GET ${url} (page ${pageCount})`);
+        const t0 = Date.now();
+        const res = await fetch(url, { headers: authHeader });
+        const httpMs = Date.now() - t0;
+        console.log(`${tag} ↩️  HTTP ${res.status} in ${httpMs}ms`);
+        if (!res.ok) {
+          const errBody = await res.text().catch(() => '');
+          console.error(`${tag} ❌ API error ${res.status}: ${errBody}`);
+          throw new Error(`OpenAI spend API ${res.status}`);
+        }
         const data = await res.json() as { data?: Bucket[]; next_page?: string; has_more?: boolean };
+        const buckets = data.data ?? [];
+        console.log(`${tag} 📦 Response: ${buckets.length} bucket(s) | has_more: ${data.has_more} | next_page: ${data.next_page ?? 'null'}`);
+
         const items = (bucket: Bucket) => bucket.results ?? bucket.result ?? [];
-        const pageTotal = (data.data ?? []).reduce((sum, bucket) => {
-          return sum + items(bucket).reduce((s, r) => {
-            if (r.project_id != null && r.project_id !== projectId) return s; // skip other projects
+        let pageTotal = 0;
+        let bucketsWithData = 0;
+        for (const bucket of buckets) {
+          const results = items(bucket);
+          if (results.length === 0) continue;
+          bucketsWithData++;
+          for (const r of results) {
+            console.log(`${tag}   📊 Bucket ${bucket.start_time_iso ?? '?'} → result: project_id=${r.project_id ?? 'null'} amount=${JSON.stringify(r.amount)}`);
+            if (r.project_id != null && r.project_id !== projectId) {
+              console.log(`${tag}   ⏭️  Skipping — project_id mismatch (${r.project_id} ≠ ${projectId})`);
+              continue;
+            }
             const amt = r.amount;
-            if (amt == null) return s;
+            if (amt == null) continue;
             const rawVal = typeof amt === 'number' ? amt : (amt as { value?: number | string }).value;
             const val = typeof rawVal === 'string' ? parseFloat(rawVal) : rawVal;
-            return s + (typeof val === 'number' && !Number.isNaN(val) ? val : 0);
-          }, 0);
-        }, 0);
+            const contribution = (typeof val === 'number' && !Number.isNaN(val)) ? val : 0;
+            if (contribution > 0) {
+              console.log(`${tag}   ✅ Counting $${contribution.toFixed(8)} (raw: "${rawVal}")`);
+            }
+            pageTotal += contribution;
+          }
+        }
+        console.log(`${tag} 💵 Page ${pageCount} total: $${pageTotal.toFixed(8)} (${bucketsWithData}/${buckets.length} buckets had data)`);
         total += pageTotal;
         page = data.has_more && data.next_page ? data.next_page : null;
       } while (page);
+
+      console.log(`${tag} 🏁 Final spend total: $${total.toFixed(8)} (${pageCount} page(s) fetched)`);
       return { amount: total, period: 'monthly', currency: 'usd' };
     });
   }
