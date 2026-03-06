@@ -37,9 +37,6 @@ export default function PlatformFullCard({ platform, onKill, onRestore, onMutate
   const badge = STATE_BADGE[state]
   const burnRate = platform.burnRate ?? 0
   const spendToday = platform.spendToday ?? 0
-  const creditBalance = platform.creditBalance ?? null
-  const creditRemaining = creditBalance != null ? Math.max(0, creditBalance - spendToday) : null
-  const creditPct = creditBalance != null && creditBalance > 0 ? creditRemaining! / creditBalance : null
 
   const handleKill = async () => {
     setIsActing(true)
@@ -141,16 +138,11 @@ export default function PlatformFullCard({ platform, onKill, onRestore, onMutate
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: creditBalance != null ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', borderTop: '1px solid var(--border)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderTop: '1px solid var(--border)' }}>
         {[
           { label: 'Burn Rate', value: `$${burnRate.toFixed(2)}/hr` },
           { label: "Today's Spend", value: `$${spendToday.toFixed(2)}` },
           { label: 'Daily Budget', value: `$${platform.dailyBudget}` },
-          ...(creditBalance != null ? [{
-            label: 'Credits Left',
-            value: `$${creditRemaining!.toFixed(2)}`,
-            warn: creditPct != null && creditPct < 0.2,
-          }] : []),
         ].map((stat) => (
           <div key={stat.label} style={{ padding: '12px 16px', borderRight: '1px solid var(--border)' }}>
             <div
@@ -171,7 +163,6 @@ export default function PlatformFullCard({ platform, onKill, onRestore, onMutate
                 fontSize: '18px',
                 fontWeight: 800,
                 letterSpacing: '-0.5px',
-                color: ('warn' in stat && stat.warn) ? 'var(--warn)' : undefined,
               }}
             >
               {stat.value}
@@ -179,31 +170,6 @@ export default function PlatformFullCard({ platform, onKill, onRestore, onMutate
           </div>
         ))}
       </div>
-
-      {/* Credit balance progress bar — only shown when creditBalance is set */}
-      {creditBalance != null && creditPct != null && (
-        <div style={{ padding: '6px 20px 0' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <span style={{ fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '9px', color: 'var(--muted)' }}>
-              CREDIT REMAINING
-            </span>
-            <span style={{ fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '9px', color: 'var(--muted)' }}>
-              ${creditRemaining!.toFixed(2)} / ${creditBalance.toFixed(2)}
-            </span>
-          </div>
-          <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', overflow: 'hidden' }}>
-            <div
-              style={{
-                height: '100%',
-                width: `${Math.max(0, Math.min(100, creditPct * 100)).toFixed(1)}%`,
-                background: creditPct > 0.4 ? 'var(--safe)' : creditPct > 0.2 ? 'var(--warn)' : 'var(--kill)',
-                borderRadius: '2px',
-                transition: 'width 0.5s ease',
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Gauge */}
       <div style={{ padding: '10px 20px 14px' }}>

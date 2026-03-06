@@ -44,7 +44,6 @@ const CREDENTIAL_FIELDS: Record<string, { name: string; label: string; placehold
 const thresholdsSchema = z.object({
   hourlyLimit: z.number().min(1),
   dailyBudget: z.number().min(1),
-  creditBalance: z.number().min(0).optional().nullable(),
   displayName: z.string().optional(),
 })
 
@@ -87,7 +86,7 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
 
   const { register, handleSubmit, formState: { errors } } = useForm<ThresholdsForm>({
     resolver: zodResolver(thresholdsSchema),
-    defaultValues: { hourlyLimit: 50, dailyBudget: 200, creditBalance: undefined },
+    defaultValues: { hourlyLimit: 50, dailyBudget: 200 },
   })
 
   const handleCredentialChange = (name: string, value: string) => {
@@ -121,7 +120,6 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
           credentials,
           hourlyLimit: data.hourlyLimit,
           dailyBudget: data.dailyBudget,
-          creditBalance: data.creditBalance ?? null,
           displayName: data.displayName || undefined,
         }),
       })
@@ -408,21 +406,6 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
                       {errors.dailyBudget.message}
                     </div>
                   )}
-                </div>
-              </div>
-              <div style={{ marginTop: '12px' }}>
-                <label style={labelStyle}>
-                  Prepaid Credits ($) <span style={{ color: 'var(--muted2)', fontWeight: 400 }}>— optional</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="e.g. 5.00 for $5 OpenAI credits"
-                  {...register('creditBalance', { valueAsNumber: true, setValueAs: (v) => (v === '' || isNaN(v) ? null : Number(v)) })}
-                  style={{ ...inputStyle, borderColor: errors.creditBalance ? 'var(--kill)' : 'var(--border)' }}
-                />
-                <div style={{ fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '9px', color: 'var(--muted2)', marginTop: '4px' }}>
-                  Enter your total loaded credits so the dashboard can show remaining balance.
                 </div>
               </div>
             </div>

@@ -33,7 +33,6 @@ model Platform {
   hourlyLimit     Float         @default(200)
   dailyBudget     Float         @default(500)
   monthlyBudget   Float         @default(5000)
-  creditBalance   Float?        // prepaid credits loaded (e.g. OpenAI $5 credits); null = not tracked
   breakerState    BreakerState  @default(CLOSED)
   isActive        Boolean       @default(true)
   autoKill        Boolean       @default(true)
