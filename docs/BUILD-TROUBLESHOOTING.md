@@ -22,3 +22,13 @@ The warning about `sentry.client.config.ts` and `instrumentation-client.ts` is f
 ## Vitest CJS deprecation
 
 The message “The CJS build of Vite's Node API is deprecated” comes from Vitest/Vite. Tests still run (28/28). You can ignore it until Vitest provides a stable ESM setup.
+
+## Cron poll: "Can't reach database server" on Vercel
+
+When `/api/cron/poll` runs on Vercel, it used to do one `findMany` plus many fire-and-forget `platform.update` and `spendReading.create` calls. That can exhaust Supabase's connection pool (limited connections on the pooler), leading to "Can't reach database server at … pooler.supabase.com:6543".
+
+**What we did:** On Vercel (`VERCEL=1`), the cron no longer runs those optional DB writes. The dashboard still gets lastPolledAt and latest spend from Redis. Only the initial `findMany` (to list platforms) uses the DB per cron run.
+
+**If you self-host:** Those DB writes still run (SpendReading and Platform.lastPolledAt are updated).
+
+**If you still see "Can't reach":** In Supabase dashboard, confirm the project is not paused (restore it if needed). Check Database → Connection pooler and connection limits; increase pool size or upgrade if needed.

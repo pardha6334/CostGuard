@@ -76,16 +76,16 @@ async function pollSinglePlatform(platform: any): Promise<void> {
     // Store lastPolledAt in Redis so UI updates even when DB update times out (e.g. serverless statement timeout)
     await redis.set(`lastPolled:${platform.id}`, String(now), { ex: 86400 })
 
-    // Persist to DB (fire-and-forget — don't block poll cycle)
-    prisma.spendReading
-      .create({ data: { platformId: platform.id, amount: spendData.amount, burnRate } })
-      .catch((e: Error) => console.error('SpendReading write failed:', e.message))
-
-    // Update lastPolledAt in DB (best-effort; may timeout on serverless)
-    prisma.platform
-      .update({ where: { id: platform.id }, data: { lastPolledAt: new Date(now) } })
-      .catch((e: Error) => console.error('lastPolledAt update failed:', e.message))
-
+    // On Vercel/serverless, skip optional DB writes to avoid exhausting Supabase connection pool.
+    // Dashboard uses Redis for lastPolledAt and latest spend; only the initial findMany needs DB.
+    if (process.env.VERCEL !== '1') {
+      prisma.spendReading
+        .create({ data: { platformId: platform.id, amount: spendData.amount, burnRate } })
+        .catch((e: Error) => console.error('SpendReading write failed:', e.message))
+      prisma.platform
+        .update({ where: { id: platform.id }, data: { lastPolledAt: new Date(now) } })
+        .catch((e: Error) => console.error('lastPolledAt update failed:', e.message))
+    }
   } finally {
     await redis.del(lockKey)
   }
