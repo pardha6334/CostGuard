@@ -14,13 +14,23 @@ export async function GET(req: NextRequest) {
   const platformId = searchParams.get('platformId')
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 200)
 
+  const where: {
+    userId: string
+    status?: string
+    platformId?: string
+    id?: { not: { startsWith: string } }
+  } = {
+    userId: user.id,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(status ? { status: status as any } : {}),
+    ...(platformId ? { platformId } : {}),
+  }
+  // In production, hide dev-seeded incidents (id starts with dev-inc-)
+  if (process.env.NODE_ENV === 'production') {
+    where.id = { not: { startsWith: 'dev-inc-' } }
+  }
   const incidents = await prisma.incident.findMany({
-    where: {
-      userId: user.id,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ...(status ? { status: status as any } : {}),
-      ...(platformId ? { platformId } : {}),
-    },
+    where,
     include: {
       platform: { select: { provider: true, displayName: true } },
     },

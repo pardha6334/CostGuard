@@ -20,8 +20,16 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const where: { userId: string; isActive: boolean; id?: { not: { startsWith: string } } } = {
+    userId: user.id,
+    isActive: true,
+  }
+  // In production, hide dev-seeded platforms (id starts with dev-)
+  if (process.env.NODE_ENV === 'production') {
+    where.id = { not: { startsWith: 'dev-' } }
+  }
   const platforms = await prisma.platform.findMany({
-    where: { userId: user.id, isActive: true },
+    where,
     select: {
       id: true, provider: true, displayName: true, environment: true,
       hourlyLimit: true, dailyBudget: true, monthlyBudget: true,
