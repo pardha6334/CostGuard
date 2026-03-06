@@ -17,13 +17,17 @@ export class OpenAIAdapter implements PlatformAdapter {
     return withRetry(async () => {
       const tag = `[OPENAI:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      // Use UTC boundaries so day buckets align with OpenAI's UTC-midnight bucket edges.
+      // end_time must be start of the NEXT UTC day — the API only returns results for a
+      // bucket once its end time has passed. Using "now" mid-day gives empty results for today.
+      const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      const startOfNextDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
       const startSec = Math.floor(startOfMonth.getTime() / 1000);
-      const endSec = Math.floor(now.getTime() / 1000);
+      const endSec = Math.floor(startOfNextDay.getTime() / 1000);
       const authHeader = { Authorization: `Bearer ${this.creds.adminKey}` };
       const projectId = this.creds.projectId;
 
-      console.log(`${tag} 📅 Date range: ${startOfMonth.toISOString().split('T')[0]} → ${now.toISOString().split('T')[0]} (${startSec} → ${endSec})`);
+      console.log(`${tag} 📅 Date range: ${startOfMonth.toISOString().split('T')[0]} → ${startOfNextDay.toISOString().split('T')[0]} (${startSec} → ${endSec}) [end = next UTC midnight]`);
       console.log(`${tag} 🔑 Using key: sk-...${this.creds.adminKey?.slice(-6) ?? 'MISSING'} | projectId: ${projectId ?? 'MISSING'}`);
 
       // API returns data[] of buckets; each bucket has "results" (plural). amount.value can be string or number.
