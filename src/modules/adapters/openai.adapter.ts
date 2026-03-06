@@ -17,18 +17,27 @@ export class OpenAIAdapter implements PlatformAdapter {
     return withRetry(async () => {
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const res = await fetch(
-        `https://api.openai.com/v1/organization/costs?` +
-        `start_time=${Math.floor(startOfMonth.getTime() / 1000)}` +
-        `&end_time=${Math.floor(now.getTime() / 1000)}` +
-        `&project_id=${this.creds.projectId}`,
-        { headers: { Authorization: `Bearer ${this.creds.adminKey}` } }
-      );
-      if (!res.ok) throw new Error(`OpenAI spend API ${res.status}`);
-      const data = await res.json();
-      const amount = data.data?.reduce((s: number, d: { results?: { amount?: { value?: number } }[] }) =>
-        s + (d.results?.[0]?.amount?.value ?? 0), 0) ?? 0;
-      return { amount, period: 'monthly', currency: 'usd' };
+      const startSec = Math.floor(startOfMonth.getTime() / 1000);
+      const endSec = Math.floor(now.getTime() / 1000);
+      const authHeader = { Authorization: `Bearer ${this.creds.adminKey}` };
+      type Bucket = { result?: Array<{ amount?: { value?: number } }> };
+      let total = 0;
+      let page: string | null = null;
+      do {
+        const query = `start_time=${startSec}&end_time=${endSec}` +
+          `&project_ids=${encodeURIComponent(this.creds.projectId)}` +
+          `&limit=35` + (page ? `&page=${encodeURIComponent(page)}` : '');
+        const res = await fetch(`https://api.openai.com/v1/organization/costs?${query}`, { headers: authHeader });
+        if (!res.ok) throw new Error(`OpenAI spend API ${res.status}`);
+        const data = await res.json() as { data?: Bucket[]; next_page?: string; has_more?: boolean };
+        const amount = (data.data ?? []).reduce(
+          (sum, bucket) => sum + (bucket.result ?? []).reduce((s, r) => s + (r.amount?.value ?? 0), 0),
+          0
+        );
+        total += amount;
+        page = data.has_more && data.next_page ? data.next_page : null;
+      } while (page);
+      return { amount: total, period: 'monthly', currency: 'usd' };
     });
   }
 

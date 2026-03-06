@@ -7,6 +7,14 @@ import { runPollCycle } from '@/modules/polling/engine'
 export const runtime = 'nodejs'
 export const maxDuration = 300 // 5 minutes — enough for 500 platforms
 
+// GET: allow health check; returns 200 with hint so you know the route is alive (polling must use POST)
+export async function GET() {
+  return NextResponse.json({
+    message: 'Cron poll endpoint. Use POST to run a poll (QStash or x-cron-secret).',
+    method: 'POST',
+  })
+}
+
 export async function POST(req: NextRequest) {
   // In development skip signature check for easy local testing
   if (process.env.NODE_ENV !== 'production') {
