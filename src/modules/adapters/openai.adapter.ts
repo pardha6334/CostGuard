@@ -101,52 +101,87 @@ export class OpenAIAdapter implements PlatformAdapter {
   }
 
   async kill(): Promise<KillResult> {
+    const tag = `[OPENAI:KILL:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
     try {
-      const rateLimitId = await this.getRateLimitId();
-      const res = await fetch(
-        `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rateLimitId}`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${this.creds.adminKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            max_requests_per_1_minute: 1,
-            max_tokens_per_1_minute: 100,
-          }),
-        }
+      const rateLimits = await this.getAllRateLimits();
+      console.log(`${tag} 🔴 Killing ${rateLimits.length} rate limit(s) for project ${this.creds.projectId}`);
+      if (rateLimits.length === 0) {
+        console.warn(`${tag} ⚠️  No rate limits found — kill has no effect`);
+        return { success: false, method: 'rate_limit_minimized', reversible: true, error: 'No rate limits found for this project' };
+      }
+      const results = await Promise.all(
+        rateLimits.map(async (rl) => {
+          const res = await fetch(
+            `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rl.id}`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${this.creds.adminKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                max_requests_per_1_minute: 1,
+                max_tokens_per_1_minute: 100,
+              }),
+            }
+          );
+          console.log(`${tag}   model=${rl.model ?? rl.id} → HTTP ${res.status} ${res.ok ? '✅' : '❌'}`);
+          if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            console.error(`${tag}   ❌ Failed to kill ${rl.id}: ${body}`);
+          }
+          return res.ok;
+        })
       );
+      const allOk = results.every(Boolean);
+      const anyOk = results.some(Boolean);
+      console.log(`${tag} ${allOk ? '✅' : anyOk ? '⚠️ Partial' : '❌'} Kill complete — ${results.filter(Boolean).length}/${results.length} rate limits throttled`);
       return {
-        success: res.ok,
+        success: anyOk,
         method: 'rate_limit_minimized',
         reversible: true,
-        error: res.ok ? undefined : `HTTP ${res.status}`,
+        error: allOk ? undefined : `${results.filter(v => !v).length} rate limit(s) failed to update`,
       };
     } catch (err) {
+      console.error(`${tag} ❌ Kill threw:`, String(err));
       return { success: false, method: 'rate_limit_minimized', reversible: true, error: String(err) };
     }
   }
 
   async restore(): Promise<RestoreResult> {
+    const tag = `[OPENAI:RESTORE:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
     try {
-      const rateLimitId = await this.getRateLimitId();
-      const res = await fetch(
-        `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rateLimitId}`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${this.creds.adminKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            max_requests_per_1_minute: 3500,
-            max_tokens_per_1_minute: 90000,
-          }),
-        }
+      const rateLimits = await this.getAllRateLimits();
+      console.log(`${tag} 🟢 Restoring ${rateLimits.length} rate limit(s) for project ${this.creds.projectId}`);
+      const results = await Promise.all(
+        rateLimits.map(async (rl) => {
+          const res = await fetch(
+            `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rl.id}`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${this.creds.adminKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                max_requests_per_1_minute: 3500,
+                max_tokens_per_1_minute: 90000,
+              }),
+            }
+          );
+          console.log(`${tag}   model=${rl.model ?? rl.id} → HTTP ${res.status} ${res.ok ? '✅' : '❌'}`);
+          return res.ok;
+        })
       );
-      return { success: res.ok, method: 'rate_limit_restored' };
+      const allOk = results.every(Boolean);
+      console.log(`${tag} ${allOk ? '✅' : '⚠️'} Restore complete — ${results.filter(Boolean).length}/${results.length} rate limits restored`);
+      return {
+        success: allOk,
+        method: 'rate_limit_restored',
+        error: allOk ? undefined : `${results.filter(v => !v).length} rate limit(s) failed to restore`,
+      };
     } catch (err) {
+      console.error(`${tag} ❌ Restore threw:`, String(err));
       return { success: false, method: 'rate_limit_restored', error: String(err) };
     }
   }
@@ -161,16 +196,18 @@ export class OpenAIAdapter implements PlatformAdapter {
     } catch { return false; }
   }
 
-  private async getRateLimitId(): Promise<string> {
-    if (this.creds.rateLimitId) return this.creds.rateLimitId;
+  // Returns ALL rate limit entries for the project (one per model).
+  // Kill/restore must target every entry — throttling only one model leaves others unrestricted.
+  private async getAllRateLimits(): Promise<{ id: string; model?: string }[]> {
     const res = await fetch(
       `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits`,
       { headers: { Authorization: `Bearer ${this.creds.adminKey}` } }
     );
+    if (!res.ok) throw new Error(`Rate limits fetch failed: HTTP ${res.status}`);
     const data = await res.json();
-    const id = data.data?.[0]?.id;
-    if (!id) throw new Error('No rate limit ID found');
-    this.creds.rateLimitId = id;
-    return id;
+    const items: { id: string; model?: string }[] = (data.data ?? []).map(
+      (rl: { id: string; model?: string }) => ({ id: rl.id, model: rl.model })
+    );
+    return items;
   }
 }
