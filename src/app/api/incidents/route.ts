@@ -12,13 +12,19 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
-  const status = searchParams.get('status')
+  const statusParam = searchParams.get('status')
   const platformId = searchParams.get('platformId')
-  const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 200)
+  const limitRaw = parseInt(searchParams.get('limit') ?? '50', 10)
+  const limit = Number.isNaN(limitRaw) ? 50 : Math.min(Math.max(1, limitRaw), 200)
+
+  const validStatuses: IncidentStatus[] = ['ACTIVE', 'RESTORING', 'RESOLVED']
+  const status = statusParam && validStatuses.includes(statusParam as IncidentStatus)
+    ? (statusParam as IncidentStatus)
+    : undefined
 
   const where: Prisma.IncidentWhereInput = {
     userId: user.id,
-    ...(status ? { status: status as IncidentStatus } : {}),
+    ...(status ? { status } : {}),
     ...(platformId ? { platformId } : {}),
   }
   // In production, hide dev-seeded incidents (id starts with dev-inc-)

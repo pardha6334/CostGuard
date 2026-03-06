@@ -66,21 +66,24 @@ async function pollSinglePlatform(platform: any): Promise<void> {
     )
     const burnRate = calc.getBurnRatePerHour()
 
+    const now = Date.now()
     // Cache latest reading for dashboard (5 min TTL)
     await redis.set(
       `spend:${platform.id}:latest`,
-      { amount: spendData.amount, burnRate, ts: Date.now() },
+      { amount: spendData.amount, burnRate, ts: now },
       { ex: 300 }
     )
+    // Store lastPolledAt in Redis so UI updates even when DB update times out (e.g. serverless statement timeout)
+    await redis.set(`lastPolled:${platform.id}`, String(now), { ex: 86400 })
 
     // Persist to DB (fire-and-forget — don't block poll cycle)
     prisma.spendReading
       .create({ data: { platformId: platform.id, amount: spendData.amount, burnRate } })
       .catch((e: Error) => console.error('SpendReading write failed:', e.message))
 
-    // Update lastPolledAt
+    // Update lastPolledAt in DB (best-effort; may timeout on serverless)
     prisma.platform
-      .update({ where: { id: platform.id }, data: { lastPolledAt: new Date() } })
+      .update({ where: { id: platform.id }, data: { lastPolledAt: new Date(now) } })
       .catch((e: Error) => console.error('lastPolledAt update failed:', e.message))
 
   } finally {

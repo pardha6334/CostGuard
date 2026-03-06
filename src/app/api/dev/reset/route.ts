@@ -27,9 +27,10 @@ export async function POST(req: NextRequest) {
     where: { id: { in: devPlatformIds }, userId: user.id },
   })
 
-  // Clear Redis keys
+  // Clear Redis keys (including lastPolled so UI does not show stale poll time after re-seed)
   for (const id of devPlatformIds) {
     await redis.del(`spend:${id}:latest`)
+    await redis.del(`lastPolled:${id}`)
     await redis.del(`window:${id}`)
     await redis.del(`lock:poll:${id}`)
   }

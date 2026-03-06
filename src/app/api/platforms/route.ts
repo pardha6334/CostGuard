@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/db'
+import { redis } from '@/lib/redis'
 import { encrypt } from '@/lib/crypto'
 import { getAdapter } from '@/modules/polling/adapter-factory'
 import { z } from 'zod'
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
   if (process.env.NODE_ENV === 'production') {
     where.id = { not: { startsWith: 'dev-' } }
   }
-  const platforms = await prisma.platform.findMany({
+  const platformsFromDb = await prisma.platform.findMany({
     where,
     select: {
       id: true, provider: true, displayName: true, environment: true,
@@ -40,6 +41,37 @@ export async function GET(req: NextRequest) {
     },
     orderBy: { lastPolledAt: 'desc' },
   })
+
+  // Enrich with live data from Redis (burn rate, spend, lastPolledAt) so UI updates without DB dependency
+  // If Redis is down, fall back to DB-only so the dashboard still loads
+  let platforms
+  try {
+    platforms = await Promise.all(
+      platformsFromDb.map(async (p) => {
+        const [latest, lastPolledTs] = await Promise.all([
+          redis.get<{ amount: number; burnRate: number; ts: number }>(`spend:${p.id}:latest`),
+          redis.get<string>(`lastPolled:${p.id}`),
+        ])
+        const ts = lastPolledTs != null ? Number(lastPolledTs) : NaN
+        const lastPolledAt = !Number.isNaN(ts)
+          ? new Date(ts).toISOString()
+          : (p.lastPolledAt?.toISOString() ?? null)
+        return {
+          ...p,
+          lastPolledAt,
+          burnRate: latest?.burnRate ?? 0,
+          spendToday: latest?.amount ?? 0,
+        }
+      })
+    )
+  } catch {
+    platforms = platformsFromDb.map((p) => ({
+      ...p,
+      lastPolledAt: p.lastPolledAt?.toISOString() ?? null,
+      burnRate: 0,
+      spendToday: 0,
+    }))
+  }
 
   return NextResponse.json({ platforms })
 }

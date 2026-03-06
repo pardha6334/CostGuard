@@ -1,6 +1,6 @@
 'use client'
 // src/lib/hooks/usePlatforms.ts
-// CostGuard — SWR hook for GET /api/platforms, auto-refreshes every 30s
+// CostGuard — SWR hook for GET /api/platforms, live refresh without full reload
 import useSWR from 'swr'
 import type { Platform } from '@/lib/types'
 
@@ -10,7 +10,11 @@ export function usePlatforms() {
   const { data, error, isLoading, mutate } = useSWR<{ platforms: Platform[] }>(
     '/api/platforms',
     fetcher,
-    { refreshInterval: 30_000 }
+    {
+      refreshInterval: 15_000, // refresh every 15s so poll time and metrics update smoothly
+      revalidateOnFocus: true,
+      dedupingInterval: 5_000, // avoid duplicate requests within 5s
+    }
   )
 
   return {

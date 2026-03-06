@@ -23,7 +23,10 @@ export class OpenAIAdapter implements PlatformAdapter {
       type Bucket = { result?: Array<{ amount?: { value?: number } }> };
       let total = 0;
       let page: string | null = null;
+      const maxPages = 20; // guard against API returning has_more without next_page
+      let pageCount = 0;
       do {
+        if (++pageCount > maxPages) break;
         const query = `start_time=${startSec}&end_time=${endSec}` +
           `&project_ids=${encodeURIComponent(this.creds.projectId)}` +
           `&limit=35` + (page ? `&page=${encodeURIComponent(page)}` : '');
