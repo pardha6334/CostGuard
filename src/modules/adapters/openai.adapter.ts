@@ -134,8 +134,8 @@ export class OpenAIAdapter implements PlatformAdapter {
           const errBody = await res.text().catch(() => '{}');
           let errCode = '';
           try { errCode = JSON.parse(errBody)?.error?.code ?? ''; } catch { /* */ }
-          if (errCode === 'rate_limit_does_not_exist_for_org_and_model') {
-            // Model not enabled for this org — cannot be used, safe to skip
+          if (errCode === 'rate_limit_does_not_exist_for_org_and_model' || errCode === 'rate_limit_not_updatable') {
+            // Not enabled for org / non-updatable type — safe to skip, can't affect spend
             return 'skipped';
           }
           console.error(`${tag}   ❌ model=${rl.model ?? rl.id} HTTP ${res.status}: ${errBody}`);
@@ -145,7 +145,7 @@ export class OpenAIAdapter implements PlatformAdapter {
       const ok = results.filter(r => r === 'ok').length;
       const skipped = results.filter(r => r === 'skipped').length;
       const failed = results.filter(r => r === 'failed').length;
-      console.log(`${tag} ${failed === 0 ? '✅' : '⚠️'} Kill complete — ${ok} throttled, ${skipped} skipped (not-for-org), ${failed} real errors`);
+      console.log(`${tag} ${failed === 0 ? '✅' : '⚠️'} Kill complete — ${ok} throttled, ${skipped} skipped, ${failed} real errors`);
       return {
         success: ok > 0,
         method: 'rate_limit_minimized',
@@ -186,7 +186,7 @@ export class OpenAIAdapter implements PlatformAdapter {
           const errBody = await res.text().catch(() => '{}');
           let errCode = '';
           try { errCode = JSON.parse(errBody)?.error?.code ?? ''; } catch { /* */ }
-          if (errCode === 'rate_limit_does_not_exist_for_org_and_model') {
+          if (errCode === 'rate_limit_does_not_exist_for_org_and_model' || errCode === 'rate_limit_not_updatable') {
             return 'skipped';
           }
           console.error(`${tag}   ❌ model=${rl.model ?? rl.id} HTTP ${res.status}: ${errBody}`);
@@ -231,10 +231,15 @@ export class OpenAIAdapter implements PlatformAdapter {
     const all: { id: string; model?: string }[] = (data.data ?? []).map(
       (rl: { id: string; model?: string }) => ({ id: rl.id, model: rl.model })
     );
-    // Skip fine-tuned models — OpenAI API explicitly blocks updating these
-    const killable = all.filter(rl => !rl.model?.startsWith('ft:'));
+    // Skip non-updatable model types — OpenAI API blocks updating these:
+    //   ft:*     = fine-tuned models (rate_limit_not_updatable)
+    //   *-shared = ChatGPT shared-tier limits (rate_limit_not_updatable)
+    const isNonUpdatable = (model?: string) =>
+      !model ? false : model.startsWith('ft:') || model.endsWith('-shared') || model.endsWith('-alpha-shared');
+    const killable = all.filter(rl => !isNonUpdatable(rl.model));
+    const skippedCount = all.length - killable.length;
     const tag = `[OPENAI:RL:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
-    console.log(`${tag} ${all.length} total rate limits, ${killable.length} killable (${all.length - killable.length} ft:* skipped)`);
+    console.log(`${tag} ${all.length} total rate limits, ${killable.length} killable (${skippedCount} non-updatable skipped)`);
     return killable;
   }
 }
