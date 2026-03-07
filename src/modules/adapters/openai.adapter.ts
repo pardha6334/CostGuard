@@ -109,8 +109,10 @@ export class OpenAIAdapter implements PlatformAdapter {
         console.warn(`${tag} ⚠️  No rate limits found — kill has no effect`);
         return { success: false, method: 'rate_limit_minimized', reversible: true, error: 'No rate limits found for this project' };
       }
+      // 'skipped' = model not enabled for this org (can't be used anyway, safe to ignore)
+      // 'failed'  = real error (e.g. server_error 500) that should be reported
       const results = await Promise.all(
-        rateLimits.map(async (rl) => {
+        rateLimits.map(async (rl): Promise<'ok' | 'skipped' | 'failed'> => {
           const res = await fetch(
             `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rl.id}`,
             {
@@ -125,22 +127,30 @@ export class OpenAIAdapter implements PlatformAdapter {
               }),
             }
           );
-          console.log(`${tag}   model=${rl.model ?? rl.id} → HTTP ${res.status} ${res.ok ? '✅' : '❌'}`);
-          if (!res.ok) {
-            const body = await res.text().catch(() => '');
-            console.error(`${tag}   ❌ Failed to kill ${rl.id}: ${body}`);
+          if (res.ok) {
+            console.log(`${tag}   model=${rl.model ?? rl.id} → HTTP 200 ✅`);
+            return 'ok';
           }
-          return res.ok;
+          const errBody = await res.text().catch(() => '{}');
+          let errCode = '';
+          try { errCode = JSON.parse(errBody)?.error?.code ?? ''; } catch { /* */ }
+          if (errCode === 'rate_limit_does_not_exist_for_org_and_model') {
+            // Model not enabled for this org — cannot be used, safe to skip
+            return 'skipped';
+          }
+          console.error(`${tag}   ❌ model=${rl.model ?? rl.id} HTTP ${res.status}: ${errBody}`);
+          return 'failed';
         })
       );
-      const allOk = results.every(Boolean);
-      const anyOk = results.some(Boolean);
-      console.log(`${tag} ${allOk ? '✅' : anyOk ? '⚠️ Partial' : '❌'} Kill complete — ${results.filter(Boolean).length}/${results.length} rate limits throttled`);
+      const ok = results.filter(r => r === 'ok').length;
+      const skipped = results.filter(r => r === 'skipped').length;
+      const failed = results.filter(r => r === 'failed').length;
+      console.log(`${tag} ${failed === 0 ? '✅' : '⚠️'} Kill complete — ${ok} throttled, ${skipped} skipped (not-for-org), ${failed} real errors`);
       return {
-        success: anyOk,
+        success: ok > 0,
         method: 'rate_limit_minimized',
         reversible: true,
-        error: allOk ? undefined : `${results.filter(v => !v).length} rate limit(s) failed to update`,
+        error: failed > 0 ? `${failed} model(s) failed with server errors (transient — retry safe)` : undefined,
       };
     } catch (err) {
       console.error(`${tag} ❌ Kill threw:`, String(err));
@@ -154,7 +164,7 @@ export class OpenAIAdapter implements PlatformAdapter {
       const rateLimits = await this.getAllRateLimits();
       console.log(`${tag} 🟢 Restoring ${rateLimits.length} rate limit(s) for project ${this.creds.projectId}`);
       const results = await Promise.all(
-        rateLimits.map(async (rl) => {
+        rateLimits.map(async (rl): Promise<'ok' | 'skipped' | 'failed'> => {
           const res = await fetch(
             `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rl.id}`,
             {
@@ -169,16 +179,28 @@ export class OpenAIAdapter implements PlatformAdapter {
               }),
             }
           );
-          console.log(`${tag}   model=${rl.model ?? rl.id} → HTTP ${res.status} ${res.ok ? '✅' : '❌'}`);
-          return res.ok;
+          if (res.ok) {
+            console.log(`${tag}   model=${rl.model ?? rl.id} → HTTP 200 ✅`);
+            return 'ok';
+          }
+          const errBody = await res.text().catch(() => '{}');
+          let errCode = '';
+          try { errCode = JSON.parse(errBody)?.error?.code ?? ''; } catch { /* */ }
+          if (errCode === 'rate_limit_does_not_exist_for_org_and_model') {
+            return 'skipped';
+          }
+          console.error(`${tag}   ❌ model=${rl.model ?? rl.id} HTTP ${res.status}: ${errBody}`);
+          return 'failed';
         })
       );
-      const allOk = results.every(Boolean);
-      console.log(`${tag} ${allOk ? '✅' : '⚠️'} Restore complete — ${results.filter(Boolean).length}/${results.length} rate limits restored`);
+      const ok = results.filter(r => r === 'ok').length;
+      const skipped = results.filter(r => r === 'skipped').length;
+      const failed = results.filter(r => r === 'failed').length;
+      console.log(`${tag} ${failed === 0 ? '✅' : '⚠️'} Restore complete — ${ok} restored, ${skipped} skipped, ${failed} errors`);
       return {
-        success: allOk,
+        success: ok > 0,
         method: 'rate_limit_restored',
-        error: allOk ? undefined : `${results.filter(v => !v).length} rate limit(s) failed to restore`,
+        error: failed > 0 ? `${failed} model(s) failed to restore` : undefined,
       };
     } catch (err) {
       console.error(`${tag} ❌ Restore threw:`, String(err));
@@ -196,8 +218,9 @@ export class OpenAIAdapter implements PlatformAdapter {
     } catch { return false; }
   }
 
-  // Returns ALL rate limit entries for the project (one per model).
-  // Kill/restore must target every entry — throttling only one model leaves others unrestricted.
+  // Returns killable rate limit entries for the project.
+  // Fine-tuned models (ft:*) are excluded — OpenAI returns `rate_limit_not_updatable` for them.
+  // Models not enabled for the org also can't be used, so skipping them is safe.
   private async getAllRateLimits(): Promise<{ id: string; model?: string }[]> {
     const res = await fetch(
       `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits`,
@@ -205,9 +228,13 @@ export class OpenAIAdapter implements PlatformAdapter {
     );
     if (!res.ok) throw new Error(`Rate limits fetch failed: HTTP ${res.status}`);
     const data = await res.json();
-    const items: { id: string; model?: string }[] = (data.data ?? []).map(
+    const all: { id: string; model?: string }[] = (data.data ?? []).map(
       (rl: { id: string; model?: string }) => ({ id: rl.id, model: rl.model })
     );
-    return items;
+    // Skip fine-tuned models — OpenAI API explicitly blocks updating these
+    const killable = all.filter(rl => !rl.model?.startsWith('ft:'));
+    const tag = `[OPENAI:RL:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
+    console.log(`${tag} ${all.length} total rate limits, ${killable.length} killable (${all.length - killable.length} ft:* skipped)`);
+    return killable;
   }
 }
