@@ -2,12 +2,21 @@
 // CostGuard — OpenAI spend monitoring and rate-limit kill switch
 
 import { withRetry } from '@/lib/backoff';
+import { redis } from '@/lib/redis';
 import type { PlatformAdapter, SpendData, KillResult, RestoreResult } from './base.adapter';
 
 interface OpenAICredentials {
   adminKey: string;     // sk-admin-...
   projectId: string;    // proj_...
-  rateLimitId?: string; // cached after first fetch
+}
+
+// Full rate limit entry as returned by OpenAI API
+interface RateLimit {
+  id: string;
+  model?: string;
+  max_requests_per_1_minute: number;
+  max_tokens_per_1_minute: number;
+  max_images_per_1_minute?: number;
 }
 
 export class OpenAIAdapter implements PlatformAdapter {
@@ -109,6 +118,12 @@ export class OpenAIAdapter implements PlatformAdapter {
         console.warn(`${tag} ⚠️  No rate limits found — kill has no effect`);
         return { success: false, method: 'rate_limit_minimized', reversible: true, error: 'No rate limits found for this project' };
       }
+
+      // Snapshot original values to Redis BEFORE overwriting — restore will read these back
+      const snapshotKey = `ratelimits:${this.creds.projectId}:originals`;
+      await redis.set(snapshotKey, rateLimits, { ex: 86400 }); // 24h TTL
+      console.log(`${tag} 💾 Saved ${rateLimits.length} original rate limit values to Redis (key: ${snapshotKey})`);
+
       // 'skipped' = model not enabled for this org (can't be used anyway, safe to ignore)
       // 'failed'  = real error (e.g. server_error 500) that should be reported
       const results = await Promise.all(
@@ -128,14 +143,13 @@ export class OpenAIAdapter implements PlatformAdapter {
             }
           );
           if (res.ok) {
-            console.log(`${tag}   model=${rl.model ?? rl.id} → HTTP 200 ✅`);
+            console.log(`${tag}   model=${rl.model ?? rl.id} (was ${rl.max_requests_per_1_minute} req/min) → HTTP 200 ✅`);
             return 'ok';
           }
           const errBody = await res.text().catch(() => '{}');
           let errCode = '';
           try { errCode = JSON.parse(errBody)?.error?.code ?? ''; } catch { /* */ }
           if (errCode === 'rate_limit_does_not_exist_for_org_and_model' || errCode === 'rate_limit_not_updatable') {
-            // Not enabled for org / non-updatable type — safe to skip, can't affect spend
             return 'skipped';
           }
           console.error(`${tag}   ❌ model=${rl.model ?? rl.id} HTTP ${res.status}: ${errBody}`);
@@ -161,8 +175,22 @@ export class OpenAIAdapter implements PlatformAdapter {
   async restore(): Promise<RestoreResult> {
     const tag = `[OPENAI:RESTORE:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
     try {
-      const rateLimits = await this.getAllRateLimits();
-      console.log(`${tag} 🟢 Restoring ${rateLimits.length} rate limit(s) for project ${this.creds.projectId}`);
+      // Load the original values that were snapshotted to Redis during kill
+      const snapshotKey = `ratelimits:${this.creds.projectId}:originals`;
+      const originals = await redis.get<RateLimit[]>(snapshotKey);
+
+      let rateLimits: RateLimit[];
+      if (originals && originals.length > 0) {
+        rateLimits = originals;
+        console.log(`${tag} 🟢 Restoring ${rateLimits.length} rate limit(s) to original values (from Redis snapshot)`);
+      } else {
+        // Fallback: no snapshot found — re-fetch current limits and restore to whatever OpenAI has
+        // This should not happen in normal flow (snapshot is set during kill with 24h TTL)
+        console.warn(`${tag} ⚠️  No Redis snapshot found — fetching current rate limits as fallback`);
+        rateLimits = await this.getAllRateLimits();
+        console.log(`${tag} 🟢 Restoring ${rateLimits.length} rate limit(s) using current live values (no snapshot)`);
+      }
+
       const results = await Promise.all(
         rateLimits.map(async (rl): Promise<'ok' | 'skipped' | 'failed'> => {
           const res = await fetch(
@@ -174,13 +202,16 @@ export class OpenAIAdapter implements PlatformAdapter {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                max_requests_per_1_minute: 3500,
-                max_tokens_per_1_minute: 90000,
+                max_requests_per_1_minute: rl.max_requests_per_1_minute,
+                max_tokens_per_1_minute: rl.max_tokens_per_1_minute,
+                ...(rl.max_images_per_1_minute != null
+                  ? { max_images_per_1_minute: rl.max_images_per_1_minute }
+                  : {}),
               }),
             }
           );
           if (res.ok) {
-            console.log(`${tag}   model=${rl.model ?? rl.id} → HTTP 200 ✅`);
+            console.log(`${tag}   model=${rl.model ?? rl.id} → restored to ${rl.max_requests_per_1_minute} req/min ✅`);
             return 'ok';
           }
           const errBody = await res.text().catch(() => '{}');
@@ -193,10 +224,18 @@ export class OpenAIAdapter implements PlatformAdapter {
           return 'failed';
         })
       );
+
       const ok = results.filter(r => r === 'ok').length;
       const skipped = results.filter(r => r === 'skipped').length;
       const failed = results.filter(r => r === 'failed').length;
-      console.log(`${tag} ${failed === 0 ? '✅' : '⚠️'} Restore complete — ${ok} restored, ${skipped} skipped, ${failed} errors`);
+      console.log(`${tag} ${failed === 0 ? '✅' : '⚠️'} Restore complete — ${ok} restored to originals, ${skipped} skipped, ${failed} errors`);
+
+      // Clean up Redis snapshot on full success
+      if (failed === 0 && originals) {
+        await redis.del(snapshotKey);
+        console.log(`${tag} 🗑️  Redis snapshot deleted`);
+      }
+
       return {
         success: ok > 0,
         method: 'rate_limit_restored',
@@ -218,19 +257,23 @@ export class OpenAIAdapter implements PlatformAdapter {
     } catch { return false; }
   }
 
-  // Returns killable rate limit entries for the project.
-  // Fine-tuned models (ft:*) are excluded — OpenAI returns `rate_limit_not_updatable` for them.
-  // Models not enabled for the org also can't be used, so skipping them is safe.
-  private async getAllRateLimits(): Promise<{ id: string; model?: string }[]> {
+  // Returns killable rate limit entries with their CURRENT values from OpenAI.
+  // These current values are snapshotted to Redis before kill so restore can revert exactly.
+  // Fine-tuned (ft:*) and shared-tier (*-shared) models are excluded — API blocks updating them.
+  private async getAllRateLimits(): Promise<RateLimit[]> {
     const res = await fetch(
       `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits`,
       { headers: { Authorization: `Bearer ${this.creds.adminKey}` } }
     );
     if (!res.ok) throw new Error(`Rate limits fetch failed: HTTP ${res.status}`);
     const data = await res.json();
-    const all: { id: string; model?: string }[] = (data.data ?? []).map(
-      (rl: { id: string; model?: string }) => ({ id: rl.id, model: rl.model })
-    );
+    const all: RateLimit[] = (data.data ?? []).map((rl: RateLimit) => ({
+      id: rl.id,
+      model: rl.model,
+      max_requests_per_1_minute: rl.max_requests_per_1_minute,
+      max_tokens_per_1_minute: rl.max_tokens_per_1_minute,
+      max_images_per_1_minute: rl.max_images_per_1_minute,
+    }));
     // Skip non-updatable model types — OpenAI API blocks updating these:
     //   ft:*     = fine-tuned models (rate_limit_not_updatable)
     //   *-shared = ChatGPT shared-tier limits (rate_limit_not_updatable)
