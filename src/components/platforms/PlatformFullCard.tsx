@@ -6,6 +6,8 @@ import type { Platform } from '@/lib/types'
 import { getPlatformState, PROVIDER_ICONS, PROVIDER_COLORS } from '@/lib/types'
 import DistanceGauge from '@/components/dashboard/DistanceGauge'
 
+const monoFont = 'var(--font-share-tech-mono, Share Tech Mono)'
+
 interface PlatformFullCardProps {
   platform: Platform
   onKill: (id: string) => Promise<void>
@@ -31,6 +33,44 @@ export default function PlatformFullCard({ platform, onKill, onRestore, onMutate
   const [isActing, setIsActing] = useState(false)
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null)
   const [testLatency, setTestLatency] = useState<number | null>(null)
+
+  // Edit panel state
+  const [showEdit, setShowEdit] = useState(false)
+  const [editHourly, setEditHourly] = useState(String(platform.hourlyLimit))
+  const [editDaily, setEditDaily] = useState(String(platform.dailyBudget))
+  const [editAutoKill, setEditAutoKill] = useState(platform.autoKill)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
+
+  const handleSaveSettings = async () => {
+    const hourly = parseFloat(editHourly)
+    const daily = parseFloat(editDaily)
+    if (isNaN(hourly) || hourly <= 0 || isNaN(daily) || daily <= 0) {
+      setSaveMsg('Invalid values')
+      return
+    }
+    setIsSaving(true)
+    setSaveMsg(null)
+    try {
+      const res = await fetch(`/api/platforms/${platform.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hourlyLimit: hourly, dailyBudget: daily, autoKill: editAutoKill }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setSaveMsg('Save failed: ' + (err?.error ?? res.status))
+      } else {
+        setSaveMsg('Saved!')
+        onMutate()
+        setTimeout(() => { setSaveMsg(null); setShowEdit(false) }, 1200)
+      }
+    } catch (e) {
+      setSaveMsg('Network error')
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   const state = getPlatformState(platform)
   const icon = PROVIDER_ICONS[platform.provider] ?? '●'
@@ -192,18 +232,11 @@ export default function PlatformFullCard({ platform, onKill, onRestore, onMutate
             onClick={handleRestore}
             disabled={isActing}
             style={{
-              flex: 1,
-              padding: '7px 0',
-              borderRadius: '5px',
-              fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)',
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '0.5px',
-              textTransform: 'uppercase',
+              flex: 1, padding: '7px 0', borderRadius: '5px',
+              fontFamily: monoFont, fontSize: '10px', fontWeight: 700,
+              letterSpacing: '0.5px', textTransform: 'uppercase',
               cursor: isActing ? 'not-allowed' : 'pointer',
-              border: '1px solid rgba(0,255,106,0.3)',
-              background: 'transparent',
-              color: 'var(--safe)',
+              border: '1px solid rgba(0,255,106,0.3)', background: 'transparent', color: 'var(--safe)',
             }}
           >
             ↺ Restore
@@ -213,18 +246,11 @@ export default function PlatformFullCard({ platform, onKill, onRestore, onMutate
             onClick={handleKill}
             disabled={isActing || state === 'killed'}
             style={{
-              flex: 1,
-              padding: '7px 0',
-              borderRadius: '5px',
-              fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)',
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '0.5px',
-              textTransform: 'uppercase',
+              flex: 1, padding: '7px 0', borderRadius: '5px',
+              fontFamily: monoFont, fontSize: '10px', fontWeight: 700,
+              letterSpacing: '0.5px', textTransform: 'uppercase',
               cursor: isActing ? 'not-allowed' : 'pointer',
-              border: '1px solid rgba(255,26,46,0.3)',
-              background: 'transparent',
-              color: 'var(--kill)',
+              border: '1px solid rgba(255,26,46,0.3)', background: 'transparent', color: 'var(--kill)',
             }}
           >
             ⚡ Kill
@@ -234,27 +260,147 @@ export default function PlatformFullCard({ platform, onKill, onRestore, onMutate
           onClick={handleTestConnection}
           disabled={isActing}
           style={{
-            flex: 1,
-            padding: '7px 0',
-            borderRadius: '5px',
-            fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)',
-            fontSize: '10px',
-            fontWeight: 700,
-            letterSpacing: '0.5px',
-            textTransform: 'uppercase',
+            flex: 1, padding: '7px 0', borderRadius: '5px',
+            fontFamily: monoFont, fontSize: '10px', fontWeight: 700,
+            letterSpacing: '0.5px', textTransform: 'uppercase',
             cursor: isActing ? 'not-allowed' : 'pointer',
-            border: '1px solid var(--border)',
-            background: 'transparent',
+            border: '1px solid var(--border)', background: 'transparent',
             color: testResult === 'ok' ? 'var(--safe)' : testResult === 'fail' ? 'var(--kill)' : 'var(--muted)',
           }}
         >
           {testResult === 'ok'
             ? `✓ OK${testLatency ? ` ${testLatency}ms` : ''}`
-            : testResult === 'fail'
-            ? '✗ Unreachable'
-            : '◎ Test'}
+            : testResult === 'fail' ? '✗ Unreachable' : '◎ Test'}
+        </button>
+        <button
+          onClick={() => {
+            setShowEdit(v => !v)
+            setEditHourly(String(platform.hourlyLimit))
+            setEditDaily(String(platform.dailyBudget))
+            setEditAutoKill(platform.autoKill)
+            setSaveMsg(null)
+          }}
+          style={{
+            flex: 1, padding: '7px 0', borderRadius: '5px',
+            fontFamily: monoFont, fontSize: '10px', fontWeight: 700,
+            letterSpacing: '0.5px', textTransform: 'uppercase',
+            cursor: 'pointer',
+            border: showEdit ? '1px solid var(--cyan)' : '1px solid var(--border)',
+            background: showEdit ? 'rgba(0,212,255,0.07)' : 'transparent',
+            color: showEdit ? 'var(--cyan)' : 'var(--muted)',
+          }}
+        >
+          ✎ Edit
         </button>
       </div>
+
+      {/* Inline edit panel */}
+      {showEdit && (
+        <div style={{
+          margin: '0 16px 14px',
+          padding: '14px',
+          background: 'var(--panel)',
+          border: '1px solid var(--border)',
+          borderRadius: '8px',
+        }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+            <div>
+              <label style={{ fontFamily: monoFont, fontSize: '9px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '5px' }}>
+                Hourly Limit ($)
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0.00001"
+                value={editHourly}
+                onChange={e => setEditHourly(e.target.value)}
+                style={{
+                  width: '100%', background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: '5px', padding: '7px 10px', fontFamily: monoFont,
+                  fontSize: '12px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ fontFamily: monoFont, fontSize: '9px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '5px' }}>
+                Daily Budget ($)
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0.00001"
+                value={editDaily}
+                onChange={e => setEditDaily(e.target.value)}
+                style={{
+                  width: '100%', background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: '5px', padding: '7px 10px', fontFamily: monoFont,
+                  fontSize: '12px', color: 'var(--text)', outline: 'none', boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Auto Kill toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <span style={{ fontFamily: monoFont, fontSize: '9px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Auto Kill
+            </span>
+            <button
+              onClick={() => setEditAutoKill(v => !v)}
+              style={{
+                width: '42px', height: '22px', borderRadius: '11px', border: 'none',
+                cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
+                background: editAutoKill ? 'var(--kill)' : 'var(--border)',
+              }}
+            >
+              <span style={{
+                position: 'absolute', top: '3px',
+                left: editAutoKill ? '22px' : '3px',
+                width: '16px', height: '16px', borderRadius: '50%',
+                background: 'white', transition: 'left 0.2s',
+              }} />
+            </button>
+          </div>
+
+          {/* Save / Cancel */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              onClick={handleSaveSettings}
+              disabled={isSaving}
+              style={{
+                flex: 1, padding: '7px 0', borderRadius: '5px',
+                fontFamily: monoFont, fontSize: '10px', fontWeight: 700,
+                letterSpacing: '0.5px', textTransform: 'uppercase',
+                cursor: isSaving ? 'not-allowed' : 'pointer',
+                border: '1px solid rgba(0,212,255,0.4)',
+                background: 'rgba(0,212,255,0.08)', color: 'var(--cyan)',
+              }}
+            >
+              {isSaving ? 'Saving...' : '✓ Save'}
+            </button>
+            <button
+              onClick={() => { setShowEdit(false); setSaveMsg(null) }}
+              style={{
+                flex: 1, padding: '7px 0', borderRadius: '5px',
+                fontFamily: monoFont, fontSize: '10px', fontWeight: 700,
+                letterSpacing: '0.5px', textTransform: 'uppercase',
+                cursor: 'pointer', border: '1px solid var(--border)',
+                background: 'transparent', color: 'var(--muted)',
+              }}
+            >
+              Cancel
+            </button>
+            {saveMsg && (
+              <span style={{
+                fontFamily: monoFont, fontSize: '10px',
+                color: saveMsg === 'Saved!' ? 'var(--safe)' : 'var(--kill)',
+              }}>
+                {saveMsg}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Last polled */}
       <div

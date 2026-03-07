@@ -6,9 +6,9 @@ import { prisma } from '@/lib/db'
 import { z } from 'zod'
 
 const PatchSchema = z.object({
-  hourlyLimit:    z.number().min(1).optional(),
-  dailyBudget:    z.number().min(1).optional(),
-  monthlyBudget:  z.number().min(1).optional(),
+  hourlyLimit:    z.number().positive().optional(),
+  dailyBudget:    z.number().positive().optional(),
+  monthlyBudget:  z.number().positive().optional(),
   autoKill:       z.boolean().optional(),
   anomalyDetect:  z.boolean().optional(),
   alertEmail:     z.boolean().optional(),
