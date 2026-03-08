@@ -257,31 +257,43 @@ export class OpenAIAdapter implements PlatformAdapter {
   }
 
   // Returns killable rate limit entries with their CURRENT values from OpenAI.
-  // These current values are snapshotted to Redis before kill so restore can revert exactly.
+  // Paginates through ALL pages (API returns has_more=true when results exceed page size).
   // Fine-tuned (ft:*) and shared-tier (*-shared) models are excluded — API blocks updating them.
   private async getAllRateLimits(): Promise<RateLimit[]> {
-    const res = await fetch(
-      `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits`,
-      { headers: { Authorization: `Bearer ${this.creds.adminKey}` } }
-    );
-    if (!res.ok) throw new Error(`Rate limits fetch failed: HTTP ${res.status}`);
-    const data = await res.json();
-    const all: RateLimit[] = (data.data ?? []).map((rl: RateLimit) => ({
-      id: rl.id,
-      model: rl.model,
-      max_requests_per_1_minute: rl.max_requests_per_1_minute,
-      max_tokens_per_1_minute: rl.max_tokens_per_1_minute,
-      max_images_per_1_minute: rl.max_images_per_1_minute,
-    }));
+    const tag = `[OPENAI:RL:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
+    const authHeader = { Authorization: `Bearer ${this.creds.adminKey}` };
+    const baseUrl = `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits`;
+    const all: RateLimit[] = [];
+    let after: string | null = null;
+    let page = 0;
+
+    do {
+      page++;
+      const url = after ? `${baseUrl}?after=${encodeURIComponent(after)}&limit=100` : `${baseUrl}?limit=100`;
+      const res = await fetch(url, { headers: authHeader });
+      if (!res.ok) throw new Error(`Rate limits fetch failed: HTTP ${res.status}`);
+      const data = await res.json() as { data?: RateLimit[]; has_more?: boolean; last_id?: string };
+      const batch: RateLimit[] = (data.data ?? []).map((rl: RateLimit) => ({
+        id: rl.id,
+        model: rl.model,
+        max_requests_per_1_minute: rl.max_requests_per_1_minute,
+        max_tokens_per_1_minute: rl.max_tokens_per_1_minute,
+        max_images_per_1_minute: rl.max_images_per_1_minute,
+      }));
+      all.push(...batch);
+      after = data.has_more && data.last_id ? data.last_id : null;
+      if (page > 1) console.log(`${tag} Page ${page}: fetched ${batch.length} more (total so far: ${all.length})`);
+    } while (after);
+
     // Skip non-updatable model types — OpenAI API blocks updating these:
-    //   ft:*     = fine-tuned models (rate_limit_not_updatable)
-    //   *-shared = ChatGPT shared-tier limits (rate_limit_not_updatable)
+    //   ft:*           = fine-tuned models (rate_limit_not_updatable)
+    //   *-shared       = ChatGPT shared-tier limits (rate_limit_not_updatable)
+    //   *-alpha-shared = internal alpha shared limits
     const isNonUpdatable = (model?: string) =>
       !model ? false : model.startsWith('ft:') || model.endsWith('-shared') || model.endsWith('-alpha-shared');
     const killable = all.filter(rl => !isNonUpdatable(rl.model));
     const skippedCount = all.length - killable.length;
-    const tag = `[OPENAI:RL:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
-    console.log(`${tag} ${all.length} total rate limits, ${killable.length} killable (${skippedCount} non-updatable skipped)`);
+    console.log(`${tag} ${all.length} total rate limits across ${page} page(s), ${killable.length} killable (${skippedCount} non-updatable skipped)`);
     return killable;
   }
 }
