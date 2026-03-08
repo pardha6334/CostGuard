@@ -230,11 +230,10 @@ export class OpenAIAdapter implements PlatformAdapter {
       const failed = results.filter(r => r === 'failed').length;
       console.log(`${tag} ${failed === 0 ? '✅' : '⚠️'} Restore complete — ${ok} restored to originals, ${skipped} skipped, ${failed} errors`);
 
-      // Clean up Redis snapshot on full success
-      if (failed === 0 && originals) {
-        await redis.del(snapshotKey);
-        console.log(`${tag} 🗑️  Redis snapshot deleted`);
-      }
+      // Always delete snapshot — whether restore fully succeeded or partially failed.
+      // Keeping it would cause the next kill to snapshot 1 req/min values as "originals".
+      await redis.del(snapshotKey);
+      console.log(`${tag} 🗑️  Redis snapshot deleted`);
 
       return {
         success: ok > 0,
