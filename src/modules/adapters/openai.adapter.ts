@@ -149,7 +149,8 @@ export class OpenAIAdapter implements PlatformAdapter {
           const errBody = await res.text().catch(() => '{}');
           let errCode = '';
           try { errCode = JSON.parse(errBody)?.error?.code ?? ''; } catch { /* */ }
-          if (errCode === 'rate_limit_does_not_exist_for_org_and_model' || errCode === 'rate_limit_not_updatable') {
+          if (errCode === 'rate_limit_does_not_exist_for_org_and_model' || errCode === 'rate_limit_not_updatable' || errCode === 'invalid_rate_limit_type') {
+            // Not enabled for org / non-updatable / uses different limit schema (e.g. sora video models) — safe to skip
             return 'skipped';
           }
           console.error(`${tag}   ❌ model=${rl.model ?? rl.id} HTTP ${res.status}: ${errBody}`);
@@ -217,7 +218,7 @@ export class OpenAIAdapter implements PlatformAdapter {
           const errBody = await res.text().catch(() => '{}');
           let errCode = '';
           try { errCode = JSON.parse(errBody)?.error?.code ?? ''; } catch { /* */ }
-          if (errCode === 'rate_limit_does_not_exist_for_org_and_model' || errCode === 'rate_limit_not_updatable') {
+          if (errCode === 'rate_limit_does_not_exist_for_org_and_model' || errCode === 'rate_limit_not_updatable' || errCode === 'invalid_rate_limit_type') {
             return 'skipped';
           }
           console.error(`${tag}   ❌ model=${rl.model ?? rl.id} HTTP ${res.status}: ${errBody}`);
