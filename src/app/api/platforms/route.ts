@@ -44,14 +44,31 @@ export async function GET(req: NextRequest) {
 
   // Enrich with live data from Redis (burn rate, spend, lastPolledAt) so UI updates without DB dependency
   // If Redis is down, fall back to DB-only so the dashboard still loads
+  // Normalize spend:latest — Redis REST can return JSON as string in some runtimes, so parse if needed
+  type SpendLatest = { amount: number; burnRate: number; ts: number } | null
+  function normalizeSpendLatest(raw: unknown): SpendLatest {
+    if (raw == null) return null
+    if (typeof raw === 'object' && 'amount' in (raw as object) && 'burnRate' in (raw as object)) return raw as SpendLatest
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw) as SpendLatest
+        return parsed && typeof parsed.amount === 'number' ? parsed : null
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+
   let platforms
   try {
     platforms = await Promise.all(
       platformsFromDb.map(async (p) => {
-        const [latest, lastPolledTs] = await Promise.all([
-          redis.get<{ amount: number; burnRate: number; ts: number }>(`spend:${p.id}:latest`),
+        const [rawLatest, lastPolledTs] = await Promise.all([
+          redis.get(`spend:${p.id}:latest`),
           redis.get<string>(`lastPolled:${p.id}`),
         ])
+        const latest = normalizeSpendLatest(rawLatest)
         const ts = lastPolledTs != null ? Number(lastPolledTs) : NaN
         const lastPolledAt = !Number.isNaN(ts)
           ? new Date(ts).toISOString()
