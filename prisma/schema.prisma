@@ -41,6 +41,7 @@ model Platform {
   alertSlack      Boolean       @default(true)
   alertWebhook    Boolean       @default(false)
   lastPolledAt    DateTime?
+  killSnapshot    String?       // encrypted JSON — original limits snapshot before kill
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   readings        SpendReading[]
   incidents       Incident[]
@@ -80,6 +81,7 @@ model Incident {
 
   @@index([userId, status])
   @@index([userId, killedAt])
+  @@index([platformId, killedAt])
 }
 
 enum Plan {
@@ -111,6 +113,7 @@ enum BreakerState {
 enum TriggerType {
   HOURLY_LIMIT
   DAILY_LIMIT
+  MONTHLY_LIMIT
   SPIKE_DETECTED
   MANUAL
 }

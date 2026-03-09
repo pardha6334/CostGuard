@@ -1,30 +1,38 @@
 // src/modules/adapters/base.adapter.ts
-// CostGuard — PlatformAdapter interface shared by all platform adapters
+// CostGuard — PlatformAdapter interface — every adapter must implement this
 
 export interface SpendData {
-  amount: number;       // total spend so far this period in $
-  burnRate?: number;    // if API provides it directly
-  period: 'hourly' | 'daily' | 'monthly';
-  currency: string;
-  rawResponse?: unknown;
+  amount: number
+  burnRate?: number
+  period: 'hourly' | 'daily' | 'monthly'
+  currency: string
+  rawResponse?: unknown
+}
+
+export interface PlatformSnapshot {
+  capturedAt: string
+  provider: string
+  data: Record<string, unknown>
 }
 
 export interface KillResult {
-  success: boolean;
-  method: string;       // what we did e.g. "rate_limit_set"
-  reversible: boolean;
-  error?: string;
+  success: boolean
+  method: string
+  reversible: boolean
+  snapshot?: PlatformSnapshot
+  error?: string
 }
 
 export interface RestoreResult {
-  success: boolean;
-  method: string;
-  error?: string;
+  success: boolean
+  method: string
+  error?: string
 }
 
 export interface PlatformAdapter {
-  getSpend(): Promise<SpendData>;
-  kill(): Promise<KillResult>;
-  restore(): Promise<RestoreResult>;
-  testConnection(): Promise<boolean>;
+  getSpend(): Promise<SpendData>
+  getSnapshot(): Promise<PlatformSnapshot>
+  kill(): Promise<KillResult>
+  restore(snapshot?: PlatformSnapshot): Promise<RestoreResult>
+  testConnection(): Promise<boolean>
 }

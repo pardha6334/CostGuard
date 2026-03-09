@@ -2,21 +2,11 @@
 // CostGuard — OpenAI spend monitoring and rate-limit kill switch
 
 import { withRetry } from '@/lib/backoff';
-import { redis } from '@/lib/redis';
-import type { PlatformAdapter, SpendData, KillResult, RestoreResult } from './base.adapter';
+import type { PlatformAdapter, SpendData, KillResult, RestoreResult, PlatformSnapshot } from './base.adapter';
 
 interface OpenAICredentials {
   adminKey: string;     // sk-admin-...
   projectId: string;    // proj_...
-}
-
-// Full rate limit entry as returned by OpenAI API
-interface RateLimit {
-  id: string;
-  model?: string;
-  max_requests_per_1_minute: number;
-  max_tokens_per_1_minute: number;
-  max_images_per_1_minute?: number;
 }
 
 export class OpenAIAdapter implements PlatformAdapter {
@@ -109,141 +99,77 @@ export class OpenAIAdapter implements PlatformAdapter {
     });
   }
 
-  async kill(): Promise<KillResult> {
-    const tag = `[OPENAI:KILL:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
+  async getSnapshot(): Promise<PlatformSnapshot> {
     try {
-      const rateLimits = await this.getAllRateLimits();
-      console.log(`${tag} 🔴 Killing ${rateLimits.length} rate limit(s) for project ${this.creds.projectId}`);
-      if (rateLimits.length === 0) {
-        console.warn(`${tag} ⚠️  No rate limits found — kill has no effect`);
-        return { success: false, method: 'rate_limit_minimized', reversible: true, error: 'No rate limits found for this project' };
-      }
-
-      // Snapshot original values to Redis BEFORE overwriting — restore will read these back
-      const snapshotKey = `ratelimits:${this.creds.projectId}:originals`;
-      await redis.set(snapshotKey, rateLimits, { ex: 86400 }); // 24h TTL
-      console.log(`${tag} 💾 Saved ${rateLimits.length} original rate limit values to Redis (key: ${snapshotKey})`);
-
-      // 'skipped' = model not enabled for this org (can't be used anyway, safe to ignore)
-      // 'failed'  = real error (e.g. server_error 500) that should be reported
-      const results = await Promise.all(
-        rateLimits.map(async (rl): Promise<'ok' | 'skipped' | 'failed'> => {
-          const res = await fetch(
-            `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rl.id}`,
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${this.creds.adminKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                max_requests_per_1_minute: 1,
-                max_tokens_per_1_minute: 100,
-              }),
-            }
-          );
-          if (res.ok) {
-            console.log(`${tag}   model=${rl.model ?? rl.id} (was ${rl.max_requests_per_1_minute} req/min) → HTTP 200 ✅`);
-            return 'ok';
-          }
-          const errBody = await res.text().catch(() => '{}');
-          let errCode = '';
-          try { errCode = JSON.parse(errBody)?.error?.code ?? ''; } catch { /* */ }
-          if (errCode === 'rate_limit_does_not_exist_for_org_and_model' || errCode === 'rate_limit_not_updatable' || errCode === 'invalid_rate_limit_type') {
-            // Not enabled for org / non-updatable / uses different limit schema (e.g. sora video models) — safe to skip
-            return 'skipped';
-          }
-          console.error(`${tag}   ❌ model=${rl.model ?? rl.id} HTTP ${res.status}: ${errBody}`);
-          return 'failed';
-        })
+      const rateLimitId = await this.getRateLimitId();
+      const res = await fetch(
+        `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rateLimitId}`,
+        { headers: { Authorization: `Bearer ${this.creds.adminKey}` } }
       );
-      const ok = results.filter(r => r === 'ok').length;
-      const skipped = results.filter(r => r === 'skipped').length;
-      const failed = results.filter(r => r === 'failed').length;
-      console.log(`${tag} ${failed === 0 ? '✅' : '⚠️'} Kill complete — ${ok} throttled, ${skipped} skipped, ${failed} real errors`);
+      const data = await res.json() as { max_requests_per_1_minute?: number; max_tokens_per_1_minute?: number; max_images_per_1_minute?: number };
       return {
-        success: ok > 0,
+        capturedAt: new Date().toISOString(),
+        provider: 'OPENAI',
+        data: {
+          rateLimitId,
+          max_requests_per_1_minute: data.max_requests_per_1_minute ?? 3500,
+          max_tokens_per_1_minute: data.max_tokens_per_1_minute ?? 90000,
+          max_images_per_1_minute: data.max_images_per_1_minute,
+        },
+      };
+    } catch {
+      return {
+        capturedAt: new Date().toISOString(),
+        provider: 'OPENAI',
+        data: { max_requests_per_1_minute: 3500, max_tokens_per_1_minute: 90000 },
+      };
+    }
+  }
+
+  async kill(): Promise<KillResult> {
+    try {
+      const snapshot = await this.getSnapshot();
+      const rateLimitId = (snapshot.data.rateLimitId as string) ?? await this.getRateLimitId();
+      const res = await fetch(
+        `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rateLimitId}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.creds.adminKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ max_requests_per_1_minute: 1, max_tokens_per_1_minute: 100 }),
+        }
+      );
+      return {
+        success: res.ok,
         method: 'rate_limit_minimized',
         reversible: true,
-        error: failed > 0 ? `${failed} model(s) failed with server errors (transient — retry safe)` : undefined,
+        snapshot,
+        error: res.ok ? undefined : `HTTP ${res.status}`,
       };
     } catch (err) {
-      console.error(`${tag} ❌ Kill threw:`, String(err));
       return { success: false, method: 'rate_limit_minimized', reversible: true, error: String(err) };
     }
   }
 
-  async restore(): Promise<RestoreResult> {
-    const tag = `[OPENAI:RESTORE:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
+  async restore(snapshot?: PlatformSnapshot): Promise<RestoreResult> {
     try {
-      // Load the original values that were snapshotted to Redis during kill
-      const snapshotKey = `ratelimits:${this.creds.projectId}:originals`;
-      const originals = await redis.get<RateLimit[]>(snapshotKey);
-
-      let rateLimits: RateLimit[];
-      if (originals && originals.length > 0) {
-        rateLimits = originals;
-        console.log(`${tag} 🟢 Restoring ${rateLimits.length} rate limit(s) to original values (from Redis snapshot)`);
-      } else {
-        // Fallback: no snapshot found — re-fetch current limits and restore to whatever OpenAI has
-        // This should not happen in normal flow (snapshot is set during kill with 24h TTL)
-        console.warn(`${tag} ⚠️  No Redis snapshot found — fetching current rate limits as fallback`);
-        rateLimits = await this.getAllRateLimits();
-        console.log(`${tag} 🟢 Restoring ${rateLimits.length} rate limit(s) using current live values (no snapshot)`);
-      }
-
-      const results = await Promise.all(
-        rateLimits.map(async (rl): Promise<'ok' | 'skipped' | 'failed'> => {
-          const res = await fetch(
-            `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rl.id}`,
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${this.creds.adminKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                max_requests_per_1_minute: rl.max_requests_per_1_minute,
-                max_tokens_per_1_minute: rl.max_tokens_per_1_minute,
-                ...(rl.max_images_per_1_minute != null
-                  ? { max_images_per_1_minute: rl.max_images_per_1_minute }
-                  : {}),
-              }),
-            }
-          );
-          if (res.ok) {
-            console.log(`${tag}   model=${rl.model ?? rl.id} → restored to ${rl.max_requests_per_1_minute} req/min ✅`);
-            return 'ok';
-          }
-          const errBody = await res.text().catch(() => '{}');
-          let errCode = '';
-          try { errCode = JSON.parse(errBody)?.error?.code ?? ''; } catch { /* */ }
-          if (errCode === 'rate_limit_does_not_exist_for_org_and_model' || errCode === 'rate_limit_not_updatable' || errCode === 'invalid_rate_limit_type') {
-            return 'skipped';
-          }
-          console.error(`${tag}   ❌ model=${rl.model ?? rl.id} HTTP ${res.status}: ${errBody}`);
-          return 'failed';
-        })
+      const rateLimitId = (snapshot?.data?.rateLimitId as string) ?? await this.getRateLimitId();
+      const limits = snapshot?.data ?? { max_requests_per_1_minute: 3500, max_tokens_per_1_minute: 90000 };
+      const maxReq = (limits.max_requests_per_1_minute as number) ?? 3500;
+      const maxTok = (limits.max_tokens_per_1_minute as number) ?? 90000;
+      const res = await fetch(
+        `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits/${rateLimitId}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.creds.adminKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            max_requests_per_1_minute: maxReq,
+            max_tokens_per_1_minute: maxTok,
+          }),
+        }
       );
-
-      const ok = results.filter(r => r === 'ok').length;
-      const skipped = results.filter(r => r === 'skipped').length;
-      const failed = results.filter(r => r === 'failed').length;
-      console.log(`${tag} ${failed === 0 ? '✅' : '⚠️'} Restore complete — ${ok} restored to originals, ${skipped} skipped, ${failed} errors`);
-
-      // Always delete snapshot — whether restore fully succeeded or partially failed.
-      // Keeping it would cause the next kill to snapshot 1 req/min values as "originals".
-      await redis.del(snapshotKey);
-      console.log(`${tag} 🗑️  Redis snapshot deleted`);
-
-      return {
-        success: ok > 0,
-        method: 'rate_limit_restored',
-        error: failed > 0 ? `${failed} model(s) failed to restore` : undefined,
-      };
+      return { success: res.ok, method: 'rate_limit_restored_to_snapshot' };
     } catch (err) {
-      console.error(`${tag} ❌ Restore threw:`, String(err));
-      return { success: false, method: 'rate_limit_restored', error: String(err) };
+      return { success: false, method: 'rate_limit_restore_failed', error: String(err) };
     }
   }
 
@@ -257,44 +183,15 @@ export class OpenAIAdapter implements PlatformAdapter {
     } catch { return false; }
   }
 
-  // Returns killable rate limit entries with their CURRENT values from OpenAI.
-  // Paginates through ALL pages (API returns has_more=true when results exceed page size).
-  // Fine-tuned (ft:*) and shared-tier (*-shared) models are excluded — API blocks updating them.
-  private async getAllRateLimits(): Promise<RateLimit[]> {
-    const tag = `[OPENAI:RL:${this.creds.projectId?.slice(-8) ?? 'unknown'}]`;
-    const authHeader = { Authorization: `Bearer ${this.creds.adminKey}` };
-    const baseUrl = `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits`;
-    const all: RateLimit[] = [];
-    let after: string | null = null;
-    let page = 0;
-
-    do {
-      page++;
-      const url = after ? `${baseUrl}?after=${encodeURIComponent(after)}&limit=100` : `${baseUrl}?limit=100`;
-      const res = await fetch(url, { headers: authHeader });
-      if (!res.ok) throw new Error(`Rate limits fetch failed: HTTP ${res.status}`);
-      const data = await res.json() as { data?: RateLimit[]; has_more?: boolean; last_id?: string };
-      const batch: RateLimit[] = (data.data ?? []).map((rl: RateLimit) => ({
-        id: rl.id,
-        model: rl.model,
-        max_requests_per_1_minute: rl.max_requests_per_1_minute,
-        max_tokens_per_1_minute: rl.max_tokens_per_1_minute,
-        max_images_per_1_minute: rl.max_images_per_1_minute,
-      }));
-      all.push(...batch);
-      after = data.has_more && data.last_id ? data.last_id : null;
-      if (page > 1) console.log(`${tag} Page ${page}: fetched ${batch.length} more (total so far: ${all.length})`);
-    } while (after);
-
-    // Skip non-updatable model types — OpenAI API blocks updating these:
-    //   ft:*           = fine-tuned models (rate_limit_not_updatable)
-    //   *-shared       = ChatGPT shared-tier limits (rate_limit_not_updatable)
-    //   *-alpha-shared = internal alpha shared limits
-    const isNonUpdatable = (model?: string) =>
-      !model ? false : model.startsWith('ft:') || model.endsWith('-shared') || model.endsWith('-alpha-shared');
-    const killable = all.filter(rl => !isNonUpdatable(rl.model));
-    const skippedCount = all.length - killable.length;
-    console.log(`${tag} ${all.length} total rate limits across ${page} page(s), ${killable.length} killable (${skippedCount} non-updatable skipped)`);
-    return killable;
+  private async getRateLimitId(): Promise<string> {
+    const res = await fetch(
+      `https://api.openai.com/v1/organization/projects/${this.creds.projectId}/rate_limits?limit=1`,
+      { headers: { Authorization: `Bearer ${this.creds.adminKey}` } }
+    );
+    if (!res.ok) throw new Error(`Rate limits fetch failed: HTTP ${res.status}`);
+    const data = await res.json() as { data?: { id: string }[] };
+    const id = data.data?.[0]?.id;
+    if (!id) throw new Error('No rate limit ID found');
+    return id;
   }
 }

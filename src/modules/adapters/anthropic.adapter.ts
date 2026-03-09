@@ -2,7 +2,7 @@
 // CostGuard — Anthropic spend monitoring and API key kill switch
 
 import { withRetry } from '@/lib/backoff';
-import type { PlatformAdapter, SpendData, KillResult, RestoreResult } from './base.adapter';
+import type { PlatformAdapter, SpendData, KillResult, RestoreResult, PlatformSnapshot } from './base.adapter';
 
 interface AnthropicCredentials {
   adminKey: string;   // sk-ant-admin-...
@@ -33,8 +33,30 @@ export class AnthropicAdapter implements PlatformAdapter {
     });
   }
 
+  async getSnapshot(): Promise<PlatformSnapshot> {
+    try {
+      const res = await fetch(
+        `https://api.anthropic.com/v1/organizations/api_keys/${this.creds.apiKeyId}`,
+        { headers: { 'x-api-key': this.creds.adminKey, 'anthropic-version': '2023-06-01' } }
+      );
+      const data = await res.json() as { status?: string; name?: string };
+      return {
+        capturedAt: new Date().toISOString(),
+        provider: 'ANTHROPIC',
+        data: { apiKeyId: this.creds.apiKeyId, status: data.status, name: data.name },
+      };
+    } catch {
+      return {
+        capturedAt: new Date().toISOString(),
+        provider: 'ANTHROPIC',
+        data: { apiKeyId: this.creds.apiKeyId, status: 'active' },
+      };
+    }
+  }
+
   async kill(): Promise<KillResult> {
     try {
+      const snapshot = await this.getSnapshot();
       const res = await fetch(
         `https://api.anthropic.com/v1/organizations/api_keys/${this.creds.apiKeyId}`,
         {
@@ -47,16 +69,17 @@ export class AnthropicAdapter implements PlatformAdapter {
           body: JSON.stringify({ status: 'inactive' }),
         }
       );
-      return { success: res.ok, method: 'api_key_deactivated', reversible: true };
+      return { success: res.ok, method: 'api_key_deactivated', reversible: true, snapshot };
     } catch (err) {
       return { success: false, method: 'api_key_deactivated', reversible: true, error: String(err) };
     }
   }
 
-  async restore(): Promise<RestoreResult> {
+  async restore(snapshot?: PlatformSnapshot): Promise<RestoreResult> {
     try {
+      const apiKeyId = (snapshot?.data?.apiKeyId as string) ?? this.creds.apiKeyId;
       const res = await fetch(
-        `https://api.anthropic.com/v1/organizations/api_keys/${this.creds.apiKeyId}`,
+        `https://api.anthropic.com/v1/organizations/api_keys/${apiKeyId}`,
         {
           method: 'POST',
           headers: {

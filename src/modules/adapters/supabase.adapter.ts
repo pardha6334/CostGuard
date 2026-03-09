@@ -1,7 +1,7 @@
 // src/modules/adapters/supabase.adapter.ts
 // CostGuard — Supabase spend monitoring and service-key rotation kill switch
 
-import type { PlatformAdapter, SpendData, KillResult, RestoreResult } from './base.adapter';
+import type { PlatformAdapter, SpendData, KillResult, RestoreResult, PlatformSnapshot } from './base.adapter';
 
 interface SupabaseCredentials {
   managementToken: string;
@@ -28,20 +28,36 @@ export class SupabaseAdapter implements PlatformAdapter {
     return { amount: data.monthly_cost ?? 0, period: 'monthly', currency: 'usd' };
   }
 
+  async getSnapshot(): Promise<PlatformSnapshot> {
+    return {
+      capturedAt: new Date().toISOString(),
+      provider: 'SUPABASE',
+      data: {
+        projectRef: this.creds.projectRef,
+        note: 'Key rotation is irreversible. New key must be copied from Supabase dashboard.',
+      },
+    };
+  }
+
   async kill(): Promise<KillResult> {
     try {
+      const snapshot = await this.getSnapshot();
       const res = await fetch(
         `https://api.supabase.com/v1/projects/${this.creds.projectRef}/api-keys`,
         { method: 'POST', headers: this.headers, body: JSON.stringify({ rotate: true }) }
       );
-      return { success: res.ok, method: 'service_key_rotated', reversible: false };
+      return { success: res.ok, method: 'service_key_rotated', reversible: false, snapshot };
     } catch (err) {
       return { success: false, method: 'service_key_rotated', reversible: false, error: String(err) };
     }
   }
 
-  async restore(): Promise<RestoreResult> {
-    return { success: true, method: 'manual_key_update_required' };
+  async restore(_snapshot?: PlatformSnapshot): Promise<RestoreResult> {
+    return {
+      success: false,
+      method: 'manual_required',
+      error: 'Supabase key was rotated. Go to Supabase dashboard → Settings → API → copy new service role key → update your app environment variables → redeploy.',
+    };
   }
 
   async testConnection(): Promise<boolean> {

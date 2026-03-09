@@ -6,9 +6,10 @@ import {
   AttachRolePolicyCommand,
   DetachRolePolicyCommand,
   CreatePolicyCommand,
+  ListAttachedRolePoliciesCommand,
 } from '@aws-sdk/client-iam';
 import { CostExplorerClient, GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
-import type { PlatformAdapter, SpendData, KillResult, RestoreResult } from './base.adapter';
+import type { PlatformAdapter, SpendData, KillResult, RestoreResult, PlatformSnapshot } from './base.adapter';
 
 interface AWSCredentials {
   accessKeyId: string;
@@ -50,8 +51,31 @@ export class AWSAdapter implements PlatformAdapter {
     return { amount, period: 'monthly', currency: 'usd' };
   }
 
+  async getSnapshot(): Promise<PlatformSnapshot> {
+    try {
+      const { AttachedPolicies } = await this.iam.send(
+        new ListAttachedRolePoliciesCommand({ RoleName: this.creds.roleName })
+      );
+      return {
+        capturedAt: new Date().toISOString(),
+        provider: 'AWS',
+        data: {
+          roleName: this.creds.roleName,
+          attachedPolicies: AttachedPolicies?.map(p => p.PolicyArn) ?? [],
+        },
+      };
+    } catch {
+      return {
+        capturedAt: new Date().toISOString(),
+        provider: 'AWS',
+        data: { roleName: this.creds.roleName, attachedPolicies: [] },
+      };
+    }
+  }
+
   async kill(): Promise<KillResult> {
     try {
+      const snapshot = await this.getSnapshot();
       const policyArn = `arn:aws:iam::${this.creds.accountId}:policy/${DENY_POLICY_NAME}`;
       try {
         await this.iam.send(new CreatePolicyCommand({
@@ -68,13 +92,13 @@ export class AWSAdapter implements PlatformAdapter {
         PolicyArn: policyArn,
       }));
 
-      return { success: true, method: 'iam_deny_all_attached', reversible: true };
+      return { success: true, method: 'iam_deny_all_attached', reversible: true, snapshot };
     } catch (err) {
       return { success: false, method: 'iam_deny_all_attached', reversible: true, error: String(err) };
     }
   }
 
-  async restore(): Promise<RestoreResult> {
+  async restore(_snapshot?: PlatformSnapshot): Promise<RestoreResult> {
     try {
       const policyArn = `arn:aws:iam::${this.creds.accountId}:policy/${DENY_POLICY_NAME}`;
       await this.iam.send(new DetachRolePolicyCommand({

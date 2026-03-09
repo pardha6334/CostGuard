@@ -26,7 +26,7 @@ export interface Incident {
   id: string
   userId: string
   platformId: string
-  triggerType: 'HOURLY_LIMIT' | 'DAILY_LIMIT' | 'SPIKE_DETECTED' | 'MANUAL'
+  triggerType: 'HOURLY_LIMIT' | 'DAILY_LIMIT' | 'MONTHLY_LIMIT' | 'SPIKE_DETECTED' | 'MANUAL'
   spendAtTrigger: number
   burnRateAtKill: number
   thresholdLimit: number

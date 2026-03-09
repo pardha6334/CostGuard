@@ -73,6 +73,13 @@ async function pollSinglePlatform(platform: any): Promise<void> {
     const window: number[] = Array.isArray(raw) ? raw : []
     const prevWindowSize = window.length
     window.push(spendData.amount)
+    // Detect month rollover: new spend < previous by 50%+ means billing reset
+    const prevAmount = window[window.length - 2]
+    if (prevAmount !== undefined && spendData.amount < prevAmount * 0.5) {
+      console.info(`[WINDOW RESET] ${platform.id} — month rollover detected (${prevAmount} → ${spendData.amount})`)
+      window.length = 0
+      window.push(spendData.amount)
+    }
     if (window.length > 60) window.shift()
     await redis.set(windowKey, window, { ex: 7200 })
     console.log(`${tag} 📊 Sliding window updated — size: ${prevWindowSize} → ${window.length}/60`)
@@ -83,7 +90,7 @@ async function pollSinglePlatform(platform: any): Promise<void> {
       calc.push(amt, Date.now() - (window.length - 1 - i) * 60_000)
     )
     const burnRate = calc.getBurnRatePerHour()
-    console.log(`${tag} 🔥 Burn rate: $${burnRate.toFixed(6)}/hr (hourly limit: $${platform.hourlyLimit}/hr, daily limit: $${platform.dailyLimit})`)
+    console.log(`${tag} 🔥 Burn rate: $${burnRate.toFixed(6)}/hr (hourly limit: $${platform.hourlyLimit}/hr, daily budget: $${platform.dailyBudget})`)
 
     const now = Date.now()
     // Cache latest reading for dashboard (15 min TTL — longer than cron interval so UI never drops to 0)
@@ -116,44 +123,118 @@ async function pollSinglePlatform(platform: any): Promise<void> {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function evaluateAndAct(platform: any): Promise<boolean> {
-  const tag = `[ENGINE:CB:${platform.id.slice(-6)}]`
   const cached = await redis.get<{ amount: number; burnRate: number; ts: number }>(
     `spend:${platform.id}:latest`
   )
-  if (!cached) {
-    console.warn(`${tag} ⚠️  No cached spend found in Redis — skipping circuit breaker evaluation`)
-    return false
-  }
+  if (!cached) return false
 
-  const { burnRate, amount } = cached
+  const { burnRate } = cached
   const window = await redis.get<number[]>(`window:${platform.id}`) ?? []
 
-  const cb = new CircuitBreaker(platform.breakerState)
+  // Check A: Hourly burn rate
+  const isOverLimit = platform.hourlyLimit > 0 && burnRate > platform.hourlyLimit
+  const requiresSpike = platform.hourlyLimit > 10
   const anomaly = detectAnomaly(window, burnRate)
-
-  // Kill condition: burn rate exceeded AND (anomaly detected OR rate is 150%+ of limit)
-  const isOverLimit = burnRate > platform.hourlyLimit
   const isDefiniteSpike = burnRate > platform.hourlyLimit * 1.5
-  const shouldKill = isOverLimit && (anomaly.isAnomaly || isDefiniteSpike) && platform.autoKill
 
-  const action = cb.evaluate(burnRate, platform.hourlyLimit)
+  // Check B: Daily budget — approximate today's spend from last 24 readings
+  const window24 = window.slice(-24)
+  const todayApprox = window24.length > 1
+    ? Math.max(0, window24[window24.length - 1] - window24[0])
+    : 0
+  const isDailyBreached = platform.dailyBudget > 0 && todayApprox > platform.dailyBudget
 
-  console.log(
-    `${tag} 🔌 Circuit breaker — state: ${platform.breakerState} | action: ${action} | ` +
-    `spend: $${amount.toFixed(6)} | burnRate: $${burnRate.toFixed(6)}/hr | ` +
-    `limit: $${platform.hourlyLimit}/hr | overLimit: ${isOverLimit} | anomaly: ${anomaly.isAnomaly} | shouldKill: ${shouldKill}`
+  // Check C: Monthly budget — cached.amount is monthly cumulative spend
+  const monthlySpend = cached.amount
+  const isMonthlyBreached = platform.monthlyBudget > 0 && monthlySpend > platform.monthlyBudget
+
+  // Budget restore exemption: if HALF_OPEN and last kill was daily/monthly, don't re-kill on budget — only on new hourly spike
+  let restoringFromBudget = false
+  if (platform.breakerState === 'HALF_OPEN') {
+    const lastIncident = await prisma.incident.findFirst({
+      where: { platformId: platform.id, status: { in: ['ACTIVE', 'RESTORING'] } },
+      orderBy: { killedAt: 'desc' },
+    })
+    restoringFromBudget =
+      lastIncident?.triggerType === 'DAILY_LIMIT' ||
+      lastIncident?.triggerType === 'MONTHLY_LIMIT'
+  }
+
+  const anyBreach = isOverLimit || isDailyBreached || isMonthlyBreached
+  const hourlyOk = !requiresSpike || anomaly.isAnomaly || isDefiniteSpike
+  const shouldKill = restoringFromBudget
+    ? (isOverLimit && hourlyOk)
+    : (anyBreach && (isOverLimit ? hourlyOk : true)) && platform.autoKill
+
+  const triggerType =
+    isOverLimit && (!requiresSpike || isDefiniteSpike || anomaly.isAnomaly) ? 'HOURLY_LIMIT'
+    : isDailyBreached ? 'DAILY_LIMIT'
+    : isMonthlyBreached ? 'MONTHLY_LIMIT'
+    : anomaly.isAnomaly ? 'SPIKE_DETECTED'
+    : 'HOURLY_LIMIT'
+
+  const cb = new CircuitBreaker(platform.breakerState)
+  const action = cb.evaluate(burnRate, platform.hourlyLimit > 0 ? platform.hourlyLimit : Infinity)
+
+  console.info(
+    `[ENGINE:CB:${platform.id.slice(-6)}] state: ${platform.breakerState} | action: ${action} | ` +
+    `burnRate: $${burnRate.toFixed(4)}/hr | hourlyLimit: $${platform.hourlyLimit}/hr | ` +
+    `daily: ${isDailyBreached ? 'BREACH' : 'ok'} | monthly: ${isMonthlyBreached ? 'BREACH' : 'ok'} | ` +
+    `shouldKill: ${shouldKill}`
   )
 
-  if (action === 'KILL' && shouldKill) {
-    console.log(`${tag} 🔴 KILL triggered! Executing kill switch...`)
+  // Warning alerts (70% and 90%) — before kill check
+  if (!shouldKill && platform.autoKill) {
+    const hourlyPct = platform.hourlyLimit > 0 ? burnRate / platform.hourlyLimit : 0
+    const dailyPct = platform.dailyBudget > 0 ? todayApprox / platform.dailyBudget : 0
+    const monthlyPct = platform.monthlyBudget > 0 ? monthlySpend / platform.monthlyBudget : 0
+    const worstPct = Math.max(hourlyPct, dailyPct, monthlyPct)
+
+    if (worstPct >= 0.9) {
+      await sendAlert({
+        type: 'warning',
+        platform: platform.displayName ?? platform.provider,
+        provider: platform.provider,
+        burnRate,
+        threshold: platform.hourlyLimit,
+        projectedSaved: burnRate * 24,
+        triggerType: `WARNING_${Math.round(worstPct * 100)}PCT`,
+        user: {
+          email: platform.user.email,
+          slackWebhook: platform.user.slackWebhook,
+          alertEmail: platform.alertEmail,
+          alertSlack: platform.alertSlack,
+        },
+      }).catch((err: Error) => console.error('Warning alert failed:', err.message))
+    } else if (worstPct >= 0.7) {
+      if (platform.user.slackWebhook && platform.alertSlack !== false) {
+        await sendAlert({
+          type: 'warning',
+          platform: platform.displayName ?? platform.provider,
+          provider: platform.provider,
+          burnRate,
+          threshold: platform.hourlyLimit,
+          projectedSaved: burnRate * 24,
+          triggerType: `APPROACHING_LIMIT_${Math.round(worstPct * 100)}PCT`,
+          user: {
+            email: platform.user.email,
+            slackWebhook: platform.user.slackWebhook,
+            alertEmail: false,
+            alertSlack: platform.alertSlack,
+          },
+        }).catch((err: Error) => console.error('70pct alert failed:', err.message))
+      }
+    }
+  }
+
+  if (shouldKill && (action === 'KILL' || anyBreach)) {
     await executeKill({
       platformId: platform.id,
       userId: platform.userId,
       burnRate,
       threshold: platform.hourlyLimit,
-      triggerType: anomaly.isAnomaly ? 'SPIKE_DETECTED' : 'HOURLY_LIMIT',
+      triggerType,
     })
-    console.log(`${tag} 📣 Sending kill alert...`)
     await sendAlert({
       type: 'kill',
       platform: platform.displayName ?? platform.provider,
@@ -161,20 +242,18 @@ async function evaluateAndAct(platform: any): Promise<boolean> {
       burnRate,
       threshold: platform.hourlyLimit,
       projectedSaved: burnRate * 24,
-      triggerType: anomaly.isAnomaly ? 'SPIKE_DETECTED' : 'HOURLY_LIMIT',
+      triggerType,
       user: {
         email: platform.user.email,
         slackWebhook: platform.user.slackWebhook,
         alertEmail: platform.alertEmail,
         alertSlack: platform.alertSlack,
       },
-    }).catch((err: Error) => console.error(`${tag} ❌ Alert dispatch failed:`, err.message))
+    }).catch((err: Error) => console.error('Kill alert failed:', err.message))
     return true
   }
 
-  // HALF_OPEN: if stable for full window, finalize restore
   if (action === 'CLOSE') {
-    console.log(`${tag} 🟢 Burn rate stable — finalizing restore (HALF_OPEN → CLOSED)`)
     await finalizeRestore(platform.id)
   }
 

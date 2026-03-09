@@ -1,7 +1,7 @@
 // src/modules/adapters/vercel.adapter.ts
 // CostGuard — Vercel spend monitoring and project pause kill switch
 
-import type { PlatformAdapter, SpendData, KillResult, RestoreResult } from './base.adapter';
+import type { PlatformAdapter, SpendData, KillResult, RestoreResult, PlatformSnapshot } from './base.adapter';
 
 interface VercelCredentials {
   accessToken: string;
@@ -28,20 +28,43 @@ export class VercelAdapter implements PlatformAdapter {
     return { amount, period: 'monthly', currency: 'usd' };
   }
 
+  async getSnapshot(): Promise<PlatformSnapshot> {
+    try {
+      const teamQ = this.creds.teamId ? `?teamId=${this.creds.teamId}` : '';
+      const res = await fetch(
+        `https://api.vercel.com/v9/projects/${this.creds.projectId}${teamQ}`,
+        { headers: this.headers }
+      );
+      const data = await res.json() as { name?: string; paused?: boolean };
+      return {
+        capturedAt: new Date().toISOString(),
+        provider: 'VERCEL',
+        data: { projectId: this.creds.projectId, name: data.name, paused: data.paused ?? false },
+      };
+    } catch {
+      return {
+        capturedAt: new Date().toISOString(),
+        provider: 'VERCEL',
+        data: { projectId: this.creds.projectId, paused: false },
+      };
+    }
+  }
+
   async kill(): Promise<KillResult> {
     try {
+      const snapshot = await this.getSnapshot();
       const teamQ = this.creds.teamId ? `?teamId=${this.creds.teamId}` : '';
       const res = await fetch(
         `https://api.vercel.com/v1/projects/${this.creds.projectId}/pause${teamQ}`,
         { method: 'POST', headers: this.headers }
       );
-      return { success: res.ok, method: 'project_paused', reversible: true };
+      return { success: res.ok, method: 'project_paused', reversible: true, snapshot };
     } catch (err) {
       return { success: false, method: 'project_paused', reversible: true, error: String(err) };
     }
   }
 
-  async restore(): Promise<RestoreResult> {
+  async restore(_snapshot?: PlatformSnapshot): Promise<RestoreResult> {
     try {
       const teamQ = this.creds.teamId ? `?teamId=${this.creds.teamId}` : '';
       const res = await fetch(
