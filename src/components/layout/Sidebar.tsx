@@ -95,11 +95,12 @@ export default function Sidebar() {
         {NAV_ITEMS.map((item) => {
           const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
           const showBadge = 'badge' in item && item.badge && errorCount > 0
+          const IconComponent = item.icon
           const iconNode =
-            typeof item.icon === 'function' ? (
-              <item.icon size={18} strokeWidth={2} />
+            typeof IconComponent === 'string' ? (
+              <span style={{ fontSize: '18px' }}>{IconComponent}</span>
             ) : (
-              <span style={{ fontSize: '18px' }}>{item.icon}</span>
+              <IconComponent size={18} strokeWidth={2} />
             )
           return (
             <Link
