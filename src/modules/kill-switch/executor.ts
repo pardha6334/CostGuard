@@ -1,10 +1,14 @@
 // src/modules/kill-switch/executor.ts
-// CostGuard — Executes kill and restore operations, logs incidents to DB
+// CostGuard — Executes kill and restore operations, snapshot storage, cooldown, Redis kill key
 import { prisma } from '@/lib/db'
 import { redis } from '@/lib/redis'
-import { encrypt, decrypt } from '@/lib/crypto'
+import { decrypt } from '@/lib/crypto'
 import { getAdapter } from '@/modules/polling/adapter-factory'
+import { sendAlert } from '@/modules/alerts/dispatcher'
+import { log } from '@/lib/logger'
 import type { KillResult, RestoreResult, PlatformSnapshot } from '@/modules/adapters/base.adapter'
+
+const SNAPSHOT_TTL_SEC = 30 * 24 * 3600 // 30 days
 
 export interface KillContext {
   platformId: string
@@ -15,55 +19,77 @@ export interface KillContext {
 }
 
 export async function executeKill(ctx: KillContext): Promise<KillResult> {
-  // Cooldown: max 3 auto-kills per platform per hour (prevents kill/restore spam)
-  if (ctx.triggerType !== 'MANUAL') {
-    const recentKills = await prisma.incident.count({
-      where: {
-        platformId: ctx.platformId,
-        triggerType: { not: 'MANUAL' },
-        killedAt: { gte: new Date(Date.now() - 3_600_000) },
-      },
-    })
-    if (recentKills >= 3) {
-      console.warn(`[COOLDOWN] ${ctx.platformId} — ${recentKills} auto-kills in last hour, suppressing`)
-      return { success: false, method: 'cooldown_active', reversible: false, error: 'Cooldown: 3 auto-kills/hour limit reached' }
-    }
-  }
-
   const platform = await prisma.platform.findUnique({
     where: { id: ctx.platformId },
+    include: { user: { select: { id: true, email: true, slackWebhook: true } } },
   })
   if (!platform) return { success: false, method: 'not_found', reversible: false, error: 'Platform not found' }
+
+  // Cooldown: max 3 auto-kills per platform per hour (Redis-based)
+  if (ctx.triggerType !== 'MANUAL') {
+    const killCount = await redis.incr(`killcount:${ctx.platformId}`)
+    await redis.expire(`killcount:${ctx.platformId}`, 3600)
+    if (killCount > 3) {
+      console.warn(`[EXECUTOR] Kill cooldown active for ${ctx.platformId} — ${killCount} kills this hour`)
+      return { success: false, method: 'cooldown_active', reversible: true, error: 'Cooldown: max 3 auto-kills per hour' }
+    }
+  }
 
   const creds = JSON.parse(decrypt(platform.encryptedCreds))
   const adapter = getAdapter(platform.provider, creds)
 
+  // Capture snapshot BEFORE kill and store in Redis + DB
+  try {
+    const snapshot = await adapter.getSnapshot()
+    const snapshotJson = JSON.stringify(snapshot)
+    await redis.set(`snapshot:${ctx.platformId}`, snapshotJson, { ex: SNAPSHOT_TTL_SEC })
+    await prisma.platform.update({
+      where: { id: ctx.platformId },
+      data: { killSnapshot: snapshotJson },
+    })
+  } catch (err) {
+    console.error(`[EXECUTOR] Snapshot capture failed for ${ctx.platformId}:`, err)
+  }
+
   const result = await adapter.kill()
 
-  // Store snapshot in Redis (fast) + DB (durable) for restore
-  if (result.snapshot) {
-    try {
-      const encryptedSnapshot = encrypt(JSON.stringify(result.snapshot))
-      await Promise.all([
-        redis.set(`snapshot:${ctx.platformId}`, encryptedSnapshot, { ex: 30 * 24 * 3600 }),
-        prisma.platform.update({
-          where: { id: ctx.platformId },
-          data: { killSnapshot: encryptedSnapshot },
-        }),
-      ])
-    } catch (err) {
-      console.error(`[SNAPSHOT STORE FAILED] ${ctx.platformId}:`, err)
-    }
-  }
-
   if (!result.success) {
-    console.error(`[KILL FAILED] ${platform.provider}:${ctx.platformId} — ${result.error}`)
+    console.error(`[EXECUTOR] ❌ KILL FAILED for ${ctx.platformId}: ${result.error}`)
+    log.error(`Kill FAILED: ${result.error}`, { error: result.error, method: result.method }, ctx.platformId, 'ERROR')
+    await sendAlert({
+      type: 'kill',
+      platform: platform.displayName ?? platform.provider,
+      provider: platform.provider,
+      burnRate: ctx.burnRate,
+      threshold: ctx.threshold,
+      projectedSaved: ctx.burnRate * 24,
+      triggerType: 'KILL_FAILED',
+      error: result.error,
+      user: {
+        email: platform.user.email,
+        slackWebhook: platform.user.slackWebhook ?? null,
+        alertEmail: platform.alertEmail,
+        alertSlack: platform.alertSlack,
+      },
+    }).catch((e: Error) => console.error('KILL_FAILED alert failed:', e.message))
+  } else {
+    // Set Redis key for app-level ft:* kill check
+    await redis.set(`costguard:kill:${ctx.platformId}`, '1', { ex: SNAPSHOT_TTL_SEC })
+    const hardBlocked = result.hardBlocked ?? 0
+    log.success(`Kill executed — ${hardBlocked} models → 0 req/min`, {
+      hardBlocked,
+      ftSkipped: result.ftSkipped,
+      sharedSkipped: result.sharedSkipped,
+      method: result.method,
+      effectiveCoverage: result.effectiveCoverage,
+    }, ctx.platformId, 'KILL')
+    log.info(`Rate limits set to 0 — ${hardBlocked} models hard blocked`, { hardBlocked, method: result.method }, ctx.platformId, 'RATELIMIT')
   }
 
-  // Update circuit breaker state
+  // Update circuit breaker state and lastTriggerType
   await prisma.platform.update({
     where: { id: ctx.platformId },
-    data: { breakerState: 'OPEN' },
+    data: { breakerState: 'OPEN', lastTriggerType: ctx.triggerType },
   })
 
   // Log incident
@@ -91,55 +117,47 @@ export async function executeRestore(platformId: string, userId: string): Promis
   if (!platform) return { success: false, method: 'not_found', error: 'Platform not found' }
   if (platform.userId !== userId) return { success: false, method: 'unauthorized', error: 'Forbidden' }
 
-  // Step 1: Read snapshot from Redis (fastest path)
-  let snapshot: PlatformSnapshot | undefined
-  try {
-    const cached = await redis.get<string>(`snapshot:${platformId}`)
-    if (cached) {
-      snapshot = JSON.parse(decrypt(cached)) as PlatformSnapshot
-      console.info(`[RESTORE] Redis snapshot found for ${platformId}`)
+  // Read snapshot from Redis first, fallback to DB (plain JSON)
+  let snapshot: PlatformSnapshot | null = null
+  const redisSnap = await redis.get<string>(`snapshot:${platformId}`)
+  if (redisSnap) {
+    try {
+      snapshot = typeof redisSnap === 'string' ? (JSON.parse(redisSnap) as PlatformSnapshot) : (redisSnap as PlatformSnapshot)
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
-
-  // Step 2: Fallback to DB snapshot
   if (!snapshot && platform.killSnapshot) {
     try {
-      snapshot = JSON.parse(decrypt(platform.killSnapshot)) as PlatformSnapshot
-      console.info(`[RESTORE] DB snapshot fallback for ${platformId}`)
+      snapshot = JSON.parse(platform.killSnapshot) as PlatformSnapshot
     } catch {
       // ignore
     }
   }
 
-  // Step 3: No snapshot — use adapter defaults (safe fallback)
   if (!snapshot) {
-    console.warn(`[RESTORE] No snapshot for ${platformId} — adapter will use safe defaults`)
+    console.warn(`[EXECUTOR] No snapshot for ${platformId} — adapter may use defaults`)
   }
 
   const creds = JSON.parse(decrypt(platform.encryptedCreds))
   const adapter = getAdapter(platform.provider, creds)
-  const result = await adapter.restore(snapshot)
+  const result = await adapter.restore(snapshot ?? undefined)
 
-  // Cleanup snapshot after successful restore
   if (result.success) {
-    await Promise.all([
-      redis.del(`snapshot:${platformId}`),
-      prisma.platform.update({
-        where: { id: platformId },
-        data: { killSnapshot: null },
-      }),
-    ])
+    await redis.del(`snapshot:${platformId}`)
+    await redis.del(`costguard:kill:${platformId}`)
+    await prisma.platform.update({
+      where: { id: platformId },
+      data: { killSnapshot: null },
+    })
+    log.success(`Restore executed — models restored to original limits`, { method: result.method, snapshotSource: 'redis_or_db' }, platformId, 'RESTORE')
   }
 
-  // Move to HALF_OPEN — monitor 15 min before closing
   await prisma.platform.update({
     where: { id: platformId },
     data: { breakerState: 'HALF_OPEN' },
   })
 
-  // Mark active incidents as RESTORING
   await prisma.incident.updateMany({
     where: { platformId, status: 'ACTIVE' },
     data: { status: 'RESTORING', resolvedByUserId: userId },

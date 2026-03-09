@@ -9,24 +9,27 @@ export interface SlackAlertPayload {
   projectedSaved: number
   triggerType: string
   appUrl: string
+  error?: string
 }
 
 export async function sendSlackAlert(payload: SlackAlertPayload): Promise<boolean> {
-  const { webhookUrl, platform, provider, burnRate, threshold, projectedSaved, triggerType } = payload
+  const { webhookUrl, platform, provider, burnRate, threshold, projectedSaved, triggerType, error } = payload
   const appUrl = payload.appUrl || process.env.NEXT_PUBLIC_APP_URL || 'https://costguard.dev'
+  const isKillFailed = triggerType === 'KILL_FAILED'
 
   const body = {
-    text: `⚡ CostGuard Kill Switch Triggered — ${platform}`,
+    text: isKillFailed ? `❌ CostGuard Kill FAILED — ${platform}` : `⚡ CostGuard Kill Switch Triggered — ${platform}`,
     blocks: [
       {
         type: 'header',
-        text: { type: 'plain_text', text: '⚡ Kill Switch Triggered', emoji: true },
+        text: { type: 'plain_text', text: isKillFailed ? '❌ Kill FAILED' : '⚡ Kill Switch Triggered', emoji: true },
       },
       {
         type: 'section',
         fields: [
           { type: 'mrkdwn', text: `*Platform*\n${provider} · ${platform}` },
           { type: 'mrkdwn', text: `*Trigger*\n${triggerType.replace(/_/g, ' ')}` },
+          ...(error ? [{ type: 'mrkdwn' as const, text: `*Error*\n${error}` }] : []),
           { type: 'mrkdwn', text: `*Burn Rate*\n$${burnRate.toFixed(2)}/hr` },
           { type: 'mrkdwn', text: `*Threshold*\n$${threshold.toFixed(2)}/hr` },
           { type: 'mrkdwn', text: `*Projected Saved (24h)*\n$${projectedSaved.toFixed(0)}` },

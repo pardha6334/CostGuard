@@ -10,6 +10,7 @@ vercel-env-reference.md
 # Next.js build output
 .next
 out
+tsconfig.tsbuildinfo
 
 # OS / IDE / Cursor
 .DS_Store

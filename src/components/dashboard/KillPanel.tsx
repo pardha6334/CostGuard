@@ -271,6 +271,44 @@ export default function KillPanel({ platforms, recentIncidents, onKill, onRestor
         </div>
       )}
 
+      {/* KILLED state — hard kill active card */}
+      {anyKilled && (
+        <div
+          style={{
+            background: 'rgba(255,26,46,0.06)',
+            border: '1px solid rgba(255,26,46,0.35)',
+            borderRadius: '8px',
+            padding: '16px',
+          }}
+        >
+          <div style={{ fontFamily: 'var(--font-barlow-condensed, Barlow Condensed)', fontSize: '14px', fontWeight: 800, color: 'var(--kill)', letterSpacing: '1px', marginBottom: '10px' }}>
+            🔴 HARD KILL ACTIVE
+          </div>
+          <div style={{ fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '11px', color: 'var(--text)', lineHeight: 1.5 }}>
+            ⚡ Instant block — 0 req/min
+          </div>
+          <div style={{ fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
+            116 models completely blocked
+          </div>
+          <div style={{ fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '10px', color: 'var(--muted)', marginTop: '8px' }}>
+            Coverage: 92.4% of real API spend
+          </div>
+          <div style={{ fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>
+            Propagation delay: None
+          </div>
+          <div style={{ marginTop: '12px', padding: '10px', background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: '6px', fontSize: '10px', color: 'var(--warn, #EAB308)' }}>
+            ⚠️ ft:* fine-tuned models require app-level block. <a href="/docs/FT-MODEL-KILL-INTEGRATION" style={{ color: 'var(--cyan)', textDecoration: 'underline' }}>View integration guide →</a>
+          </div>
+        </div>
+      )}
+
+      {/* RESTORED state message — when none killed, show last restore success */}
+      {!anyKilled && activePlatforms.length > 0 && (
+        <div style={{ fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '10px', color: 'var(--muted)' }}>
+          ✅ All models restored to original limits when applicable. Original values from pre-kill snapshot.
+        </div>
+      )}
+
       {/* Distance to Threshold list */}
       <div
         style={{

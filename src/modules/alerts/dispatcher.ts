@@ -17,6 +17,8 @@ export interface AlertPayload {
     alertEmail?: boolean
     alertSlack?: boolean
   }
+  /** For KILL_FAILED alerts */
+  error?: string
 }
 
 export interface AlertResult {
@@ -25,7 +27,7 @@ export interface AlertResult {
 }
 
 export async function sendAlert(payload: AlertPayload): Promise<AlertResult> {
-  const { user, platform, provider, burnRate, threshold, projectedSaved, triggerType } = payload
+  const { user, platform, provider, burnRate, threshold, projectedSaved, triggerType, error } = payload
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://costguard.dev'
 
   const jobs: Promise<void>[] = []
@@ -34,7 +36,7 @@ export async function sendAlert(payload: AlertPayload): Promise<AlertResult> {
   // Slack — only if webhook configured and alerts enabled
   if (user.slackWebhook && user.alertSlack !== false) {
     jobs.push(
-      sendSlackAlert({ webhookUrl: user.slackWebhook, platform, provider, burnRate, threshold, projectedSaved, triggerType, appUrl })
+      sendSlackAlert({ webhookUrl: user.slackWebhook, platform, provider, burnRate, threshold, projectedSaved, triggerType, appUrl, error })
         .then(ok => { result.slack = ok })
         .catch(err => { console.error('Slack dispatch error:', err); result.slack = false })
     )
@@ -43,7 +45,7 @@ export async function sendAlert(payload: AlertPayload): Promise<AlertResult> {
   // Email — always send unless explicitly disabled
   if (user.alertEmail !== false) {
     jobs.push(
-      sendEmailAlert({ to: user.email, platform, provider, burnRate, threshold, projectedSaved, triggerType })
+      sendEmailAlert({ to: user.email, platform, provider, burnRate, threshold, projectedSaved, triggerType, error })
         .then(ok => { result.email = ok })
         .catch(err => { console.error('Email dispatch error:', err); result.email = false })
     )

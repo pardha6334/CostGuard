@@ -40,11 +40,13 @@ model Platform {
   alertEmail      Boolean       @default(true)
   alertSlack      Boolean       @default(true)
   alertWebhook    Boolean       @default(false)
-  lastPolledAt    DateTime?
-  killSnapshot    String?       // encrypted JSON — original limits snapshot before kill
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastPolledAt     DateTime?
+  killSnapshot     String?       // JSON snapshot of pre-kill rate limits (originalLimits)
+  lastTriggerType  String?      // HOURLY_LIMIT | DAILY_LIMIT | MONTHLY_LIMIT
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   readings        SpendReading[]
   incidents       Incident[]
+  logs            Log[]
 
   @@index([userId, isActive])
   @@index([userId, provider])
@@ -122,4 +124,42 @@ enum IncidentStatus {
   ACTIVE
   RESTORING
   RESOLVED
+}
+
+model Log {
+  id         String       @id @default(cuid())
+  platformId String?
+  userId     String?
+  category   LogCategory
+  level      LogLevel
+  message    String
+  meta       Json?
+  createdAt  DateTime     @default(now())
+
+  platform   Platform?    @relation(fields: [platformId], references: [id], onDelete: SetNull)
+
+  @@index([platformId, createdAt])
+  @@index([category, createdAt])
+  @@index([level, createdAt])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+enum LogCategory {
+  POLL
+  SPEND
+  KILL
+  RESTORE
+  ALERT
+  ERROR
+  ENGINE
+  RATELIMIT
+  SYSTEM
+}
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+  SUCCESS
 }

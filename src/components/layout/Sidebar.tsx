@@ -3,16 +3,35 @@
 // CostGuard — Collapsible sidebar: 64px collapsed, 200px on hover
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { ScrollText } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 const NAV_ITEMS = [
   { href: '/', icon: '◉', label: 'Dashboard' },
   { href: '/platforms', icon: '⬡', label: 'Platforms' },
   { href: '/incidents', icon: '⚡', label: 'Incidents' },
+  { href: '/logs', icon: ScrollText, label: 'Logs', badge: true },
   { href: '/thresholds', icon: '◈', label: 'Thresholds' },
 ]
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const [errorCount, setErrorCount] = useState(0)
+
+  useEffect(() => {
+    if (!NAV_ITEMS.some((n) => n.href === '/logs')) return
+    fetch('/api/logs/error-count')
+      .then((r) => r.ok ? r.json() : { count: 0 })
+      .then((d) => setErrorCount(d?.count ?? 0))
+      .catch(() => setErrorCount(0))
+    const t = setInterval(() => {
+      fetch('/api/logs/error-count')
+        .then((r) => r.ok ? r.json() : { count: 0 })
+        .then((d) => setErrorCount(d?.count ?? 0))
+        .catch(() => setErrorCount(0))
+    }, 60000)
+    return () => clearInterval(t)
+  }, [])
 
   return (
     <aside
@@ -75,6 +94,13 @@ export default function Sidebar() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', padding: '0 10px' }}>
         {NAV_ITEMS.map((item) => {
           const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
+          const showBadge = 'badge' in item && item.badge && errorCount > 0
+          const iconNode =
+            typeof item.icon === 'function' ? (
+              <item.icon size={18} strokeWidth={2} />
+            ) : (
+              <span style={{ fontSize: '18px' }}>{item.icon}</span>
+            )
           return (
             <Link
               key={item.href}
@@ -92,11 +118,34 @@ export default function Sidebar() {
                 overflow: 'hidden',
                 transition: 'all 0.2s',
                 width: '100%',
+                position: 'relative',
               }}
             >
-              <span style={{ fontSize: '18px', flexShrink: 0, width: '20px', textAlign: 'center' }}>
-                {item.icon}
+              <span style={{ flexShrink: 0, width: '20px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {iconNode}
               </span>
+              {showBadge && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '6px',
+                    left: '28px',
+                    minWidth: '16px',
+                    height: '16px',
+                    borderRadius: '50%',
+                    background: 'var(--kill)',
+                    color: 'white',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 4px',
+                  }}
+                >
+                  {errorCount > 99 ? '99+' : errorCount}
+                </span>
+              )}
               <span
                 style={{
                   fontSize: '12px',

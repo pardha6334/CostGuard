@@ -21,6 +21,16 @@ export interface KillResult {
   reversible: boolean
   snapshot?: PlatformSnapshot
   error?: string
+  /** Rate limit zero instant hard block (confirmed 2026-03-09) */
+  hardBlock?: boolean
+  propagationDelay?: number
+  hardBlocked?: number
+  notEnabled?: number
+  sharedSkipped?: number
+  ftSkipped?: number
+  soraSkipped?: number
+  soraFixed?: boolean
+  effectiveCoverage?: number
 }
 
 export interface RestoreResult {

@@ -16,10 +16,12 @@ export interface EmailAlertPayload {
   threshold: number
   projectedSaved: number
   triggerType: string
+  error?: string
 }
 
 export async function sendEmailAlert(payload: EmailAlertPayload): Promise<boolean> {
-  const { to, platform, provider, burnRate, threshold, projectedSaved, triggerType } = payload
+  const { to, platform, provider, burnRate, threshold, projectedSaved, triggerType, error } = payload
+  const isKillFailed = triggerType === 'KILL_FAILED'
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://costguard.dev'
   const from = process.env.RESEND_FROM_EMAIL || 'alerts@costguard.dev'
 
@@ -36,9 +38,9 @@ export async function sendEmailAlert(payload: EmailAlertPayload): Promise<boolea
 
     <!-- Header -->
     <div style="background:#FF1A2E;border-radius:8px 8px 0 0;padding:20px 24px;display:flex;align-items:center;gap:12px;">
-      <span style="font-size:24px;">⚡</span>
+      <span style="font-size:24px;">${isKillFailed ? '❌' : '⚡'}</span>
       <div>
-        <div style="color:white;font-size:18px;font-weight:800;letter-spacing:1px;font-family:sans-serif;">KILL SWITCH TRIGGERED</div>
+        <div style="color:white;font-size:18px;font-weight:800;letter-spacing:1px;font-family:sans-serif;">${isKillFailed ? 'KILL FAILED' : 'KILL SWITCH TRIGGERED'}</div>
         <div style="color:rgba(255,255,255,0.8);font-size:12px;font-family:monospace;">${new Date().toISOString()}</div>
       </div>
     </div>
@@ -51,6 +53,7 @@ export async function sendEmailAlert(payload: EmailAlertPayload): Promise<boolea
         <div style="color:#5A5A88;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">Platform</div>
         <div style="color:#E0E0FF;font-size:18px;font-weight:700;font-family:sans-serif;">${provider} · ${platform}</div>
         <div style="color:#5A5A88;font-size:11px;margin-top:2px;">Trigger: ${triggerType.replace(/_/g, ' ')}</div>
+        ${error ? `<div style="color:#FF6B6B;font-size:11px;margin-top:6px;">Error: ${error}</div>` : ''}
       </div>
 
       <!-- Metrics grid -->

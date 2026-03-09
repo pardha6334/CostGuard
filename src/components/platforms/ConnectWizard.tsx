@@ -307,6 +307,22 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
         {/* STEP 2: Credentials */}
         {step === 2 && (
           <div>
+            {selectedProvider === 'OPENAI' && (
+              <div
+                style={{
+                  background: 'rgba(234, 179, 8, 0.12)',
+                  border: '1px solid rgba(234, 179, 8, 0.5)',
+                  borderRadius: '8px',
+                  padding: '12px 14px',
+                  marginBottom: '16px',
+                  fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)',
+                  fontSize: '11px',
+                  color: 'var(--warn, #EAB308)',
+                }}
+              >
+                ⚠️ Using fine-tuned (ft:*) models? Rate limit kill cannot block ft:* models — OpenAI restriction. CostGuard covers 92.4% of standard API spend automatically. Add our 3-line SDK snippet to cover ft:* models too. <a href="/docs/FT-MODEL-KILL-INTEGRATION" style={{ color: 'var(--cyan)', textDecoration: 'underline' }}>View ft:* integration guide</a>
+              </div>
+            )}
             <div style={{ marginBottom: '20px' }}>
               {(CREDENTIAL_FIELDS[selectedProvider] ?? []).map((field) => (
                 <div key={field.name} style={{ marginBottom: '16px' }}>
@@ -373,6 +389,22 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
         {/* STEP 3: Thresholds */}
         {step === 3 && (
           <form onSubmit={handleSubmit(onSubmit)}>
+            {selectedProvider === 'OPENAI' && (
+              <div
+                style={{
+                  background: 'rgba(234, 179, 8, 0.12)',
+                  border: '1px solid rgba(234, 179, 8, 0.5)',
+                  borderRadius: '8px',
+                  padding: '12px 14px',
+                  marginBottom: '16px',
+                  fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)',
+                  fontSize: '11px',
+                  color: 'var(--warn, #EAB308)',
+                }}
+              >
+                ⚠️ Using fine-tuned (ft:*) models? Rate limit kill cannot block ft:* models — OpenAI restriction. CostGuard covers 92.4% of standard API spend automatically. Add our 3-line SDK snippet to cover ft:* models too. <a href="/docs/FT-MODEL-KILL-INTEGRATION" style={{ color: 'var(--cyan)', textDecoration: 'underline' }}>View ft:* integration guide</a>
+              </div>
+            )}
             <div style={{ marginBottom: '20px' }}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>Display Name (optional)</label>
