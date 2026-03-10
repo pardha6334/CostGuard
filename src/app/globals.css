@@ -9,6 +9,7 @@
   --panel: #14142A;
   --border: #1C1C38;
   --border2: #252545;
+  --topbar-bg: rgba(3, 3, 10, 0.92);
   --kill: #FF1A2E;
   --kill2: #CC0F20;
   --kill-glow: rgba(255,26,46,0.4);
@@ -31,6 +32,7 @@ html[data-theme="light"] {
   --panel: #F5F5FC;
   --border: #D8D8EC;
   --border2: #C8C8E0;
+  --topbar-bg: rgba(255, 255, 255, 0.92);
   --kill: #D4001F;
   --kill2: #A8001A;
   --kill-glow: rgba(212,0,31,0.25);

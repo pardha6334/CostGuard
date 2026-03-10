@@ -24,7 +24,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Sidebar />
       <div style={{ marginLeft: '64px', display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
         <Topbar />
-        <main style={{ flex: 1, padding: '24px 32px' }}>
+        <main style={{ flex: 1, padding: '24px 32px', background: 'var(--void)', color: 'var(--text)' }}>
           {children}
         </main>
       </div>

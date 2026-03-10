@@ -42,24 +42,25 @@ function dateGroup(iso: string): string {
 function LogRow({ log, platformName }: { log: LogEntry; platformName?: string }) {
   const [expanded, setExpanded] = useState(false)
   const levelStyle = LEVEL_STYLES[log.level] ?? LEVEL_STYLES.INFO
-  const categoryColor = CATEGORY_STYLES[log.category] ?? '#6b7280'
+  const categoryColor = CATEGORY_STYLES[log.category] ?? undefined
   const hasMeta = log.meta && Object.keys(log.meta).length > 0
   const displayName = platformName ?? (log.platformId ? `Platform ${log.platformId.slice(0, 8)}…` : undefined)
 
   return (
     <div
       style={{
-        background: expanded ? '#111' : 'transparent',
-        borderBottom: '1px solid #1a1a1a',
+        background: expanded ? 'var(--panel)' : 'transparent',
+        borderBottom: '1px solid var(--border)',
         padding: '10px 16px',
         fontFamily: 'var(--font-share-tech-mono, "JetBrains Mono", monospace)',
         fontSize: '12px',
         cursor: hasMeta ? 'pointer' : 'default',
+        color: 'var(--text)',
       }}
       onClick={() => hasMeta && setExpanded((e) => !e)}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
-        <span style={{ color: '#6b7280', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace' }}>
+        <span style={{ color: 'var(--muted)', flexShrink: 0, fontFamily: 'JetBrains Mono, monospace' }}>
           {formatTime(log.createdAt)}
         </span>
         <span
@@ -77,7 +78,7 @@ function LogRow({ log, platformName }: { log: LogEntry; platformName?: string })
         </span>
         <span
           style={{
-            color: categoryColor,
+            color: categoryColor ?? 'var(--muted)',
             padding: '2px 6px',
             borderRadius: '4px',
             fontSize: '10px',
@@ -88,16 +89,16 @@ function LogRow({ log, platformName }: { log: LogEntry; platformName?: string })
           {log.category}
         </span>
       </div>
-      <div style={{ marginTop: '6px', color: '#e5e5e5', paddingLeft: 0 }}>
+      <div style={{ marginTop: '6px', color: 'var(--text)', paddingLeft: 0 }}>
         {log.message}
       </div>
       {displayName && (
-        <div style={{ marginTop: '4px', color: '#6b7280', fontSize: '11px' }}>
+        <div style={{ marginTop: '4px', color: 'var(--muted)', fontSize: '11px' }}>
           {displayName}
         </div>
       )}
       {hasMeta && (
-        <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px', color: '#6b7280', fontSize: '10px' }}>
+        <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--muted)', fontSize: '10px' }}>
           <span>{expanded ? '▼' : '▶'} meta</span>
         </div>
       )}
@@ -106,11 +107,11 @@ function LogRow({ log, platformName }: { log: LogEntry; platformName?: string })
           style={{
             marginTop: '8px',
             padding: '12px',
-            background: '#0a0a0a',
-            border: '1px solid #1a1a1a',
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
             borderRadius: '6px',
             fontSize: '11px',
-            color: '#9ca3af',
+            color: 'var(--muted)',
             overflow: 'auto',
           }}
         >
@@ -119,6 +120,25 @@ function LogRow({ log, platformName }: { log: LogEntry; platformName?: string })
       )}
     </div>
   )
+}
+
+type TimeRangePreset = '30m' | '1h' | '12h' | '1w' | 'today' | 'custom'
+
+function getRangeForPreset(preset: TimeRangePreset): { from: string; to: string } | null {
+  if (preset === 'custom') return null
+  const now = Date.now()
+  const to = new Date(now).toISOString()
+  let from: string
+  if (preset === '30m') from = new Date(now - 30 * 60 * 1000).toISOString()
+  else if (preset === '1h') from = new Date(now - 60 * 60 * 1000).toISOString()
+  else if (preset === '12h') from = new Date(now - 12 * 60 * 60 * 1000).toISOString()
+  else if (preset === '1w') from = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString()
+  else {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    from = d.toISOString()
+  }
+  return { from, to }
 }
 
 export default function LogsPage() {
@@ -132,11 +152,12 @@ export default function LogsPage() {
   const [category, setCategory] = useState<string>('')
   const [level, setLevel] = useState<string>('')
   const [search, setSearch] = useState('')
+  const [timeRangePreset, setTimeRangePreset] = useState<TimeRangePreset>('30m')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [hasMore, setHasMore] = useState(false)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const [source, setSource] = useState<'redis' | 'db'>('redis')
+  const [source, setSource] = useState<'redis' | 'db'>('db')
 
   const fetchLogs = useCallback(
     async (cursor?: string | null, append = false, liveFetch = false) => {
@@ -145,12 +166,19 @@ export default function LogsPage() {
       if (category) params.set('category', category)
       if (level) params.set('level', level)
       if (search) params.set('search', search)
-      if (from) params.set('from', from)
-      if (to) params.set('to', to)
+      const range = timeRangePreset !== 'custom' ? getRangeForPreset(timeRangePreset) : null
+      if (range) {
+        params.set('from', range.from)
+        params.set('to', range.to)
+        params.set('source', 'db')
+      } else {
+        if (from) params.set('from', from)
+        if (to) params.set('to', to)
+        params.set('source', source)
+      }
       if (cursor) params.set('cursor', cursor)
       if (liveFetch && newestId) params.set('after', newestId)
       params.set('limit', '50')
-      params.set('source', source)
       const res = await fetch(`/api/logs?${params}`)
       if (!res.ok) return
       const data = await res.json()
@@ -170,19 +198,19 @@ export default function LogsPage() {
       setHasMore(Boolean(data.hasMore))
       setNextCursor(data.nextCursor ?? null)
     },
-    [platformId, category, level, search, from, to, source, newestId]
+    [platformId, category, level, search, from, to, source, timeRangePreset, newestId]
   )
 
   useEffect(() => {
-    if (from || to) setLive(false)
-  }, [from, to])
+    if (from || to || timeRangePreset !== 'custom') setLive(false)
+  }, [from, to, timeRangePreset])
 
   useEffect(() => {
     setLoading(true)
     fetchLogs(null, false, false).finally(() => setLoading(false))
     // Intentionally omit fetchLogs to avoid refetch when newestId updates (live mode)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [platformId, category, level, search, from, to, source])
+  }, [platformId, category, level, search, from, to, source, timeRangePreset])
 
   useEffect(() => {
     if (!live) return
@@ -241,18 +269,27 @@ export default function LogsPage() {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
+  const filterInputStyle = {
+    padding: '8px 12px',
+    background: 'var(--panel)',
+    border: '1px solid var(--border)',
+    borderRadius: '6px',
+    color: 'var(--text)',
+    fontSize: '12px',
+  } as const
+
   return (
-    <div style={{ background: '#0a0a0a', minHeight: '100vh', color: '#e5e5e5' }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
+    <div style={{ minHeight: '100%', color: 'var(--text)' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-          <h1 style={{ fontFamily: 'var(--font-barlow-condensed, Barlow Condensed)', fontSize: '24px', fontWeight: 800, letterSpacing: '1px', margin: 0 }}>
+          <h1 style={{ fontFamily: 'var(--font-barlow-condensed, Barlow Condensed)', fontSize: '24px', fontWeight: 800, letterSpacing: '1px', margin: 0, color: 'var(--text)' }}>
             Logs
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button
               type="button"
-              disabled={!!(from || to)}
-              title={from || to ? 'Disable date filter to use live mode' : ''}
+              disabled={timeRangePreset !== 'custom' || !!(from || to)}
+              title={timeRangePreset !== 'custom' || from || to ? 'Use Custom date range to enable live mode' : ''}
               onClick={() => setLive((l) => !l)}
               style={{
                 display: 'flex',
@@ -260,12 +297,12 @@ export default function LogsPage() {
                 gap: '6px',
                 padding: '8px 14px',
                 background: live ? 'rgba(34,197,94,0.15)' : 'var(--panel)',
-                border: `1px solid ${live ? '#22c55e' : 'var(--border)'}`,
+                border: `1px solid ${live ? 'var(--safe)' : 'var(--border)'}`,
                 borderRadius: '6px',
-                color: live ? '#22c55e' : 'var(--muted)',
+                color: live ? 'var(--safe)' : 'var(--muted)',
                 fontSize: '12px',
                 fontWeight: 600,
-                cursor: from || to ? 'not-allowed' : 'pointer',
+                cursor: timeRangePreset !== 'custom' || from || to ? 'not-allowed' : 'pointer',
               }}
             >
               <span
@@ -273,7 +310,7 @@ export default function LogsPage() {
                   width: '6px',
                   height: '6px',
                   borderRadius: '50%',
-                  background: live ? '#22c55e' : '#6b7280',
+                  background: live ? 'var(--safe)' : 'var(--muted)',
                   animation: live ? 'pulse 1.5s infinite' : 'none',
                   display: 'inline-block',
                 }}
@@ -300,17 +337,25 @@ export default function LogsPage() {
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
           <select
+            value={timeRangePreset}
+            onChange={(e) => {
+              const v = e.target.value as TimeRangePreset
+              setTimeRangePreset(v)
+              if (v === 'custom') setSource('db')
+            }}
+            style={{ ...filterInputStyle, minWidth: '160px' }}
+          >
+            <option value="30m">Last 30 min</option>
+            <option value="1h">Last 1 hr</option>
+            <option value="12h">Last 12 hr</option>
+            <option value="1w">Last 1 week</option>
+            <option value="today">Today</option>
+            <option value="custom">Custom range</option>
+          </select>
+          <select
             value={platformId}
             onChange={(e) => setPlatformId(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              background: '#111',
-              border: '1px solid #1a1a1a',
-              borderRadius: '6px',
-              color: '#e5e5e5',
-              fontSize: '12px',
-              minWidth: '160px',
-            }}
+            style={{ ...filterInputStyle, minWidth: '160px' }}
           >
             <option value="">All Platforms</option>
             {(platforms ?? []).map((p) => (
@@ -320,15 +365,7 @@ export default function LogsPage() {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              background: '#111',
-              border: '1px solid #1a1a1a',
-              borderRadius: '6px',
-              color: '#e5e5e5',
-              fontSize: '12px',
-              minWidth: '140px',
-            }}
+            style={{ ...filterInputStyle, minWidth: '140px' }}
           >
             <option value="">All Categories</option>
             {['POLL', 'SPEND', 'KILL', 'RESTORE', 'ALERT', 'ERROR', 'ENGINE', 'RATELIMIT', 'SYSTEM'].map((c) => (
@@ -338,80 +375,57 @@ export default function LogsPage() {
           <select
             value={level}
             onChange={(e) => setLevel(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              background: '#111',
-              border: '1px solid #1a1a1a',
-              borderRadius: '6px',
-              color: '#e5e5e5',
-              fontSize: '12px',
-              minWidth: '120px',
-            }}
+            style={{ ...filterInputStyle, minWidth: '120px' }}
           >
             <option value="">All Levels</option>
             {['INFO', 'WARN', 'ERROR', 'SUCCESS'].map((l) => (
               <option key={l} value={l}>{l}</option>
             ))}
           </select>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => {
-              setFrom(e.target.value)
-              setSource('db')
-            }}
-            style={{
-              padding: '8px 12px',
-              background: '#111',
-              border: '1px solid #1a1a1a',
-              borderRadius: '6px',
-              color: '#e5e5e5',
-              fontSize: '12px',
-            }}
-          />
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => {
-              setTo(e.target.value)
-              setSource('db')
-            }}
-            style={{
-              padding: '8px 12px',
-              background: '#111',
-              border: '1px solid #1a1a1a',
-              borderRadius: '6px',
-              color: '#e5e5e5',
-              fontSize: '12px',
-            }}
-          />
+          {timeRangePreset === 'custom' && (
+            <>
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => {
+                  setFrom(e.target.value)
+                  setSource('db')
+                }}
+                style={filterInputStyle}
+              />
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => {
+                  setTo(e.target.value)
+                  setSource('db')
+                }}
+                style={filterInputStyle}
+              />
+            </>
+          )}
           <input
             type="text"
             placeholder="🔍 Search logs..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{
+              ...filterInputStyle,
               flex: 1,
               minWidth: '180px',
-              padding: '8px 12px',
-              background: '#111',
-              border: '1px solid #1a1a1a',
-              borderRadius: '6px',
-              color: '#e5e5e5',
-              fontSize: '12px',
             }}
           />
         </div>
 
-        <div style={{ background: '#111', border: '1px solid #1a1a1a', borderRadius: '8px', overflow: 'hidden' }}>
+        <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
           {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>Loading logs...</div>
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>Loading logs...</div>
           ) : logs.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>No logs yet. Trigger a poll or kill to see entries.</div>
+            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>No logs yet. Trigger a poll or kill to see entries.</div>
           ) : (
             Object.entries(grouped).map(([groupLabel, groupLogs]) => (
               <div key={groupLabel}>
-                <div style={{ padding: '10px 16px', background: '#0a0a0a', borderBottom: '1px solid #1a1a1a', color: '#6b7280', fontSize: '11px', fontWeight: 600 }}>
+                <div style={{ padding: '10px 16px', background: 'var(--surface)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: '11px', fontWeight: 600 }}>
                   —— {groupLabel} ——
                 </div>
                 {groupLogs.map((log) => (
@@ -421,7 +435,7 @@ export default function LogsPage() {
             ))
           )}
           {hasMore && (
-            <div style={{ padding: '16px', textAlign: 'center', borderTop: '1px solid #1a1a1a' }}>
+            <div style={{ padding: '16px', textAlign: 'center', borderTop: '1px solid var(--border)' }}>
               <button
                 type="button"
                 disabled={loadingOlder}
@@ -429,7 +443,7 @@ export default function LogsPage() {
                 style={{
                   padding: '8px 20px',
                   background: 'transparent',
-                  border: '1px solid #1a1a1a',
+                  border: '1px solid var(--border)',
                   borderRadius: '6px',
                   color: 'var(--muted)',
                   fontSize: '12px',

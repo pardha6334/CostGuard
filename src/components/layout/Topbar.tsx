@@ -56,14 +56,16 @@ export default function Topbar({ activeBreaches = 0, systemStatus = 'nominal' }:
         position: 'sticky',
         top: 0,
         zIndex: 100,
-        background: 'rgba(3,3,10,0.9)',
+        background: 'var(--topbar-bg)',
         backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
         borderBottom: '1px solid var(--border)',
         padding: '0 32px',
         height: '56px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        color: 'var(--text)',
       }}
     >
       {/* Left */}
