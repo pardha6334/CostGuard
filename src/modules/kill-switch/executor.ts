@@ -35,7 +35,10 @@ export async function executeKill(ctx: KillContext): Promise<KillResult> {
     }
   }
 
-  const creds = JSON.parse(decrypt(platform.encryptedCreds))
+  const creds = JSON.parse(decrypt(platform.encryptedCreds)) as Record<string, unknown>
+  if (platform.provider === 'ANTHROPIC' && platform.workspaceId != null) {
+    creds.workspaceId = platform.workspaceId
+  }
   const adapter = getAdapter(platform.provider, creds)
 
   // Capture snapshot BEFORE kill and store in Redis + DB
@@ -76,7 +79,10 @@ export async function executeKill(ctx: KillContext): Promise<KillResult> {
     // Set Redis key for app-level ft:* kill check
     await redis.set(`costguard:kill:${ctx.platformId}`, '1', { ex: SNAPSHOT_TTL_SEC })
     const hardBlocked = result.hardBlocked ?? 0
-    log.success(`Kill executed — ${hardBlocked} models → 0 req/min`, {
+    const killMsg = result.method === 'api_key_inactive'
+      ? `${hardBlocked} API keys deactivated`
+      : `${hardBlocked} models → 0 req/min`
+    log.success(`Kill executed — ${killMsg}`, {
       hardBlocked,
       ftSkipped: result.ftSkipped,
       sharedSkipped: result.sharedSkipped,
@@ -139,7 +145,10 @@ export async function executeRestore(platformId: string, userId: string): Promis
     console.warn(`[EXECUTOR] No snapshot for ${platformId} — adapter may use defaults`)
   }
 
-  const creds = JSON.parse(decrypt(platform.encryptedCreds))
+  const creds = JSON.parse(decrypt(platform.encryptedCreds)) as Record<string, unknown>
+  if (platform.provider === 'ANTHROPIC' && platform.workspaceId != null) {
+    creds.workspaceId = platform.workspaceId
+  }
   const adapter = getAdapter(platform.provider, creds)
   const result = await adapter.restore(snapshot ?? undefined)
 
@@ -150,7 +159,10 @@ export async function executeRestore(platformId: string, userId: string): Promis
       where: { id: platformId },
       data: { killSnapshot: null },
     })
-    log.success(`Restore executed — models restored to original limits`, { method: result.method, snapshotSource: 'redis_or_db' }, platformId, 'RESTORE')
+    const restoreMsg = result.method === 'api_key_active'
+      ? 'API keys restored to active'
+      : 'models restored to original limits'
+    log.success(`Restore executed — ${restoreMsg}`, { method: result.method, snapshotSource: 'redis_or_db' }, platformId, 'RESTORE')
   }
 
   await prisma.platform.update({

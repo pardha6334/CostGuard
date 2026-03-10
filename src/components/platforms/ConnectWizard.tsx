@@ -1,7 +1,7 @@
 'use client'
 // src/components/platforms/ConnectWizard.tsx
 // CostGuard — 3-step modal: Select provider → Credentials → Thresholds
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -20,8 +20,7 @@ const CREDENTIAL_FIELDS: Record<string, { name: string; label: string; placehold
     { name: 'projectId', label: 'Project ID', placeholder: 'proj_...' },
   ],
   ANTHROPIC: [
-    { name: 'adminKey', label: 'API Key', placeholder: 'sk-ant-...' },
-    { name: 'apiKeyId', label: 'API Key ID', placeholder: 'key_...' },
+    { name: 'adminKey', label: 'Admin API Key', placeholder: 'sk-ant-admin-...' },
   ],
   AWS: [
     { name: 'accessKeyId', label: 'Access Key ID', placeholder: 'AKIA...' },
@@ -76,13 +75,65 @@ const labelStyle: React.CSSProperties = {
   display: 'block',
 }
 
+interface AnthropicWorkspaceOption {
+  id: string
+  name: string
+  display_color: string
+}
+
 export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps) {
   const [step, setStep] = useState(1)
   const [selectedProvider, setSelectedProvider] = useState('')
   const [credentials, setCredentials] = useState<Record<string, string>>({})
   const [credErrors, setCredErrors] = useState<Record<string, string>>({})
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [apiError, setApiError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [anthropicWorkspaces, setAnthropicWorkspaces] = useState<AnthropicWorkspaceOption[]>([])
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(false)
+  const [workspacesError, setWorkspacesError] = useState<string | null>(null)
+  const [anthropicSuccess, setAnthropicSuccess] = useState<{ workspaceName: string; keyCount: number } | null>(null)
+
+  const adminKey = credentials.adminKey ?? ''
+  const isAnthropicAdminKey = adminKey.startsWith('sk-ant-admin-')
+  const isWrongAnthropicKey = adminKey.length > 10 && adminKey.startsWith('sk-ant-api-')
+
+  useEffect(() => {
+    if (selectedProvider !== 'ANTHROPIC' || !isAnthropicAdminKey || adminKey.length < 30) {
+      setAnthropicWorkspaces([])
+      setWorkspacesError(null)
+      return
+    }
+    let cancelled = false
+    setLoadingWorkspaces(true)
+    setWorkspacesError(null)
+    fetch(`/api/connect/anthropic/workspaces?adminKey=${encodeURIComponent(adminKey)}`)
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}))
+        return { ok: r.ok, data }
+      })
+      .then(({ ok, data }) => {
+        if (cancelled) return
+        if (!ok || data?.error) {
+          setWorkspacesError(typeof data?.error === 'string' ? data.error : 'Failed to load workspaces')
+          setAnthropicWorkspaces([])
+        } else if (Array.isArray(data.workspaces)) {
+          setAnthropicWorkspaces(data.workspaces)
+          setWorkspacesError(null)
+        } else {
+          setAnthropicWorkspaces([])
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAnthropicWorkspaces([])
+          setWorkspacesError('Failed to load workspaces')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingWorkspaces(false)
+      })
+    return () => { cancelled = true }
+  }, [selectedProvider, adminKey, isAnthropicAdminKey])
 
   const { register, handleSubmit, formState: { errors } } = useForm<ThresholdsForm>({
     resolver: zodResolver(thresholdsSchema),
@@ -104,6 +155,9 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
         }
       }
     }
+    if (selectedProvider === 'ANTHROPIC' && !credentials.workspaceId?.trim()) {
+      errs.workspaceId = 'Select a workspace'
+    }
     setCredErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -112,6 +166,29 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
     setIsSubmitting(true)
     setApiError('')
     try {
+      if (selectedProvider === 'ANTHROPIC') {
+        const res = await fetch('/api/connect/anthropic', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            adminKey: credentials.adminKey,
+            workspaceId: credentials.workspaceId,
+            displayName: data.displayName || undefined,
+            hourlyLimit: data.hourlyLimit,
+            dailyBudget: data.dailyBudget,
+          }),
+        })
+        const json = await res.json()
+        if (!res.ok) {
+          setApiError(typeof json.error === 'string' ? json.error : 'Failed to connect Anthropic')
+          return
+        }
+        setAnthropicSuccess({
+          workspaceName: json.workspaceName ?? 'Workspace',
+          keyCount: json.keyCount ?? 0,
+        })
+        return
+      }
       const res = await fetch('/api/platforms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -162,9 +239,9 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Close */}
+        {/* Close — if Anthropic success is shown, closing still refetches the platform list */}
         <button
-          onClick={onClose}
+          onClick={() => anthropicSuccess ? onSuccess() : onClose()}
           style={{
             position: 'absolute',
             top: '16px',
@@ -200,10 +277,48 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
             marginBottom: '24px',
           }}
         >
-          Step {step} of 3
+          {anthropicSuccess ? 'Connected' : `Step ${step} of 3`}
         </div>
 
-        {/* Step indicators */}
+        {/* Anthropic success state */}
+        {anthropicSuccess && (
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--safe)', color: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', fontWeight: 800 }}>✓</div>
+              <div>
+                <div style={{ fontFamily: 'var(--font-barlow-condensed, Barlow Condensed)', fontSize: '16px', fontWeight: 700, color: 'var(--safe)' }}>
+                  Connected — monitoring workspace: {anthropicSuccess.workspaceName}
+                </div>
+                <div style={{ fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
+                  {anthropicSuccess.keyCount} API key{anthropicSuccess.keyCount !== 1 ? 's' : ''} will be deactivated on kill
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => { setAnthropicSuccess(null); onSuccess() }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: 'var(--safe)',
+                border: 'none',
+                borderRadius: '6px',
+                fontFamily: 'var(--font-barlow-condensed, Barlow Condensed)',
+                fontSize: '13px',
+                fontWeight: 700,
+                letterSpacing: '1px',
+                textTransform: 'uppercase',
+                color: '#0a0a0a',
+                cursor: 'pointer',
+              }}
+            >
+              Done
+            </button>
+          </div>
+        )}
+
+        {/* Step indicators and steps (hidden when Anthropic success shown) */}
+        {!anthropicSuccess && (
+        <>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '28px' }}>
           {[1, 2, 3].map((s) => (
             <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -323,6 +438,27 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
                 ⚠️ Using fine-tuned (ft:*) models? Rate limit kill cannot block ft:* models — OpenAI restriction. CostGuard covers 92.4% of standard API spend automatically. Add our 3-line SDK snippet to cover ft:* models too. <a href="/docs/FT-MODEL-KILL-INTEGRATION" style={{ color: 'var(--cyan)', textDecoration: 'underline' }}>View ft:* integration guide</a>
               </div>
             )}
+            {selectedProvider === 'ANTHROPIC' && (
+              <div
+                style={{
+                  background: 'rgba(217, 119, 87, 0.12)',
+                  border: '1px solid rgba(217, 119, 87, 0.4)',
+                  borderRadius: '8px',
+                  padding: '12px 14px',
+                  marginBottom: '16px',
+                  fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)',
+                  fontSize: '11px',
+                  color: '#D97757',
+                }}
+              >
+                Get Admin key from console.anthropic.com → Settings → API Keys → Admin Keys
+              </div>
+            )}
+            {selectedProvider === 'ANTHROPIC' && isWrongAnthropicKey && (
+              <div style={{ marginBottom: '12px', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '11px', color: 'var(--kill)' }}>
+                This is a regular API key, not an Admin key. Use an Admin key (sk-ant-admin-...).
+              </div>
+            )}
             <div style={{ marginBottom: '20px' }}>
               {(CREDENTIAL_FIELDS[selectedProvider] ?? []).map((field) => (
                 <div key={field.name} style={{ marginBottom: '16px' }}>
@@ -345,6 +481,37 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
                 </div>
               ))}
             </div>
+            {selectedProvider === 'ANTHROPIC' && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={labelStyle}>Select Workspace to Monitor</label>
+                <select
+                  value={credentials.workspaceId ?? ''}
+                  onChange={(e) => handleCredentialChange('workspaceId', e.target.value)}
+                  style={{
+                    ...inputStyle,
+                    borderColor: credErrors.workspaceId ? 'var(--kill)' : 'var(--border)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="">{loadingWorkspaces ? 'Loading workspaces...' : '— Select workspace —'}</option>
+                  {anthropicWorkspaces.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+                {workspacesError && (
+                  <div style={{ color: 'var(--kill)', fontSize: '10px', marginTop: '6px', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)' }}>
+                    {workspacesError}
+                  </div>
+                )}
+                {credErrors.workspaceId && (
+                  <div style={{ color: 'var(--kill)', fontSize: '10px', marginTop: '4px', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)' }}>
+                    {credErrors.workspaceId}
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
                 onClick={() => setStep(1)}
@@ -498,6 +665,8 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
               </button>
             </div>
           </form>
+        )}
+        </>
         )}
       </div>
     </div>

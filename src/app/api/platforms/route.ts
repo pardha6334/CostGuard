@@ -103,6 +103,14 @@ export async function POST(req: NextRequest) {
 
   const { provider, credentials, hourlyLimit, dailyBudget, displayName } = parsed.data
 
+  // Anthropic requires workspace selection — use the Connect flow (ConnectWizard) instead
+  if (provider === 'ANTHROPIC') {
+    return NextResponse.json(
+      { error: 'Use the Connect flow: select Anthropic in the wizard and choose a workspace to monitor.' },
+      { status: 400 }
+    )
+  }
+
   // Test connection before saving anything
   try {
     const adapter = getAdapter(provider, credentials)

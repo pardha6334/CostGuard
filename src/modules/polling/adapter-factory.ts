@@ -12,7 +12,7 @@ import type { PlatformAdapter } from '@/modules/adapters/base.adapter';
 export function getAdapter(provider: string, creds: any): PlatformAdapter {
   const adapters: Record<string, () => PlatformAdapter> = {
     OPENAI: () => new OpenAIAdapter(creds),
-    ANTHROPIC: () => new AnthropicAdapter(creds),
+    ANTHROPIC: () => new AnthropicAdapter(creds.adminKey, creds.workspaceId),
     AWS: () => new AWSAdapter(creds),
     VERCEL: () => new VercelAdapter(creds),
     SUPABASE: () => new SupabaseAdapter(creds),

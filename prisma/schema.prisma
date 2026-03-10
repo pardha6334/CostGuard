@@ -24,29 +24,34 @@ model User {
 }
 
 model Platform {
-  id              String        @id @default(cuid())
-  userId          String
-  provider        Provider
-  encryptedCreds  String        // AES-256-GCM encrypted JSON
-  displayName     String?       // user label e.g. "prod-openai"
-  environment     String        @default("production")
-  hourlyLimit     Float         @default(200)
-  dailyBudget     Float         @default(500)
-  monthlyBudget   Float         @default(5000)
-  breakerState    BreakerState  @default(CLOSED)
-  isActive        Boolean       @default(true)
-  autoKill        Boolean       @default(true)
-  anomalyDetect   Boolean       @default(true)
-  alertEmail      Boolean       @default(true)
-  alertSlack      Boolean       @default(true)
-  alertWebhook    Boolean       @default(false)
-  lastPolledAt     DateTime?
-  killSnapshot     String?       // JSON snapshot of pre-kill rate limits (originalLimits)
-  lastTriggerType  String?      // HOURLY_LIMIT | DAILY_LIMIT | MONTHLY_LIMIT
-  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  readings        SpendReading[]
-  incidents       Incident[]
-  logs            Log[]
+  id                String        @id @default(cuid())
+  userId            String
+  provider          Provider
+  encryptedCreds    String        // AES-256-GCM encrypted JSON
+  displayName       String?       // user label e.g. "prod-openai"
+  environment       String        @default("production")
+  hourlyLimit       Float         @default(200)
+  dailyBudget       Float         @default(500)
+  monthlyBudget     Float         @default(5000)
+  breakerState      BreakerState  @default(CLOSED)
+  isActive          Boolean       @default(true)
+  autoKill          Boolean       @default(true)
+  anomalyDetect     Boolean       @default(true)
+  alertEmail        Boolean       @default(true)
+  alertSlack        Boolean       @default(true)
+  alertWebhook      Boolean       @default(false)
+  lastPolledAt      DateTime?
+  killSnapshot      String?       // JSON snapshot of pre-kill rate limits (originalLimits)
+  lastTriggerType   String?       // HOURLY_LIMIT | DAILY_LIMIT | MONTHLY_LIMIT
+  workspaceId       String?       // Anthropic workspace ID (wrkspc_...)
+  workspaceName     String?       // Anthropic workspace display name
+  killedApiKeyIds   String?       // JSON array of key IDs set inactive on kill
+  isAutoDiscovered  Boolean       @default(false)
+  parentPlatformId  String?       // for auto-discovered sub-platforms
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readings          SpendReading[]
+  incidents         Incident[]
+  logs              Log[]
 
   @@index([userId, isActive])
   @@index([userId, provider])

@@ -106,6 +106,7 @@ When CostGuard runs **Kill** (or **Restore**), it updates project rate limits vi
 | Shared-tier    | `*-shared`, `*-alpha-shared` | `rate_limit_not_updatable` | Org/shared limits; not editable per project. |
 | Not enabled    | Model not in org  | `rate_limit_does_not_exist_for_org_and_model` | No limit to update; skip is correct. |
 | Wrong schema   | e.g. video/image/audio models | `invalid_rate_limit_type` | Different limit types; we’d need model-specific PATCH bodies to update. |
+| **Above org tier** | Project limit set higher than org allows | `organization_rate_limit_exceeded` | Set project limits at or below your [usage tier](https://platform.openai.com/docs/guides/rate-limits/usage-tiers). E.g. Tier 1: 500 RPM, 30k TPM (GPT-4o/o1/o3), 200k TPM (GPT-4o-mini). |
 
 CostGuard intentionally skips these so that Kill/Restore only updates models that the API allows, and so expected API restrictions are not reported as failures. For fine-tuned or shared-tier limits, the only supported path is [OpenAI support](https://help.openai.com/en/?q=contact) or [support@openai.com](mailto:support@openai.com).
 

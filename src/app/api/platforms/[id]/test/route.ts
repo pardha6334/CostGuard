@@ -17,7 +17,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   try {
-    const creds = JSON.parse(decrypt(platform.encryptedCreds))
+    const creds = JSON.parse(decrypt(platform.encryptedCreds)) as Record<string, unknown>
+    if (platform.provider === 'ANTHROPIC' && platform.workspaceId != null) {
+      creds.workspaceId = platform.workspaceId
+    }
     const adapter = getAdapter(platform.provider, creds)
     const t0 = Date.now()
     const ok = await adapter.testConnection()

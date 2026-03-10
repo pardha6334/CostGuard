@@ -62,7 +62,10 @@ async function pollSinglePlatform(platform: any): Promise<void> {
     console.log(`${tag} ⚡ Starting poll for "${displayName}"`)
     log.info(`Poll triggered for "${displayName}"`, { platformId: platform.id, provider: platform.provider }, platform.id, 'POLL')
 
-    const creds = JSON.parse(decrypt(platform.encryptedCreds))
+    const creds = JSON.parse(decrypt(platform.encryptedCreds)) as Record<string, unknown>
+    if (platform.provider === 'ANTHROPIC' && platform.workspaceId != null) {
+      creds.workspaceId = platform.workspaceId
+    }
     const adapter = getAdapter(platform.provider, creds)
 
     console.log(`${tag} 📡 Calling adapter.getSpend()...`)
@@ -71,8 +74,12 @@ async function pollSinglePlatform(platform: any): Promise<void> {
     const apiMs = Date.now() - t0
     console.log(`${tag} 💰 getSpend() returned in ${apiMs}ms — amount: $${spendData.amount.toFixed(6)} ${spendData.currency ?? 'usd'} (period: ${spendData.period})`)
     log.info(
-      `Spend fetched: $${spendData.amount.toFixed(6)} ${spendData.currency ?? 'usd'} (${apiMs}ms)`,
-      { amount: spendData.amount, currency: spendData.currency ?? 'usd', period: spendData.period, durationMs: apiMs },
+      platform.provider === 'ANTHROPIC'
+        ? `Spend fetched (Anthropic): $${spendData.amount.toFixed(6)}`
+        : `Spend fetched: $${spendData.amount.toFixed(6)} ${spendData.currency ?? 'usd'} (${apiMs}ms)`,
+      platform.provider === 'ANTHROPIC'
+        ? { amount: spendData.amount, workspaceId: platform.workspaceId, durationMs: apiMs }
+        : { amount: spendData.amount, currency: spendData.currency ?? 'usd', period: spendData.period, durationMs: apiMs },
       platform.id,
       'SPEND'
     )

@@ -32,3 +32,26 @@ When `/api/cron/poll` runs on Vercel, it used to do one `findMany` plus many fir
 **If you self-host:** Those DB writes still run (SpendReading and Platform.lastPolledAt are updated).
 
 **If you still see "Can't reach":** In Supabase dashboard, confirm the project is not paused (restore it if needed). Check Database → Connection pooler and connection limits; increase pool size or upgrade if needed.
+
+## Prisma connection pool timeout (P2024) on Vercel
+
+When the cron or API does many DB operations (e.g. logger writing to `Log` on every log line), you may see:
+
+```
+Timed out fetching a new connection from the connection pool.
+(Current connection pool timeout: 10, connection limit: 5)
+```
+
+**Fix: increase the connection pool size** so Prisma can open more connections per serverless instance.
+
+1. In **Vercel** → your project → **Settings** → **Environment Variables**, find `DATABASE_URL`.
+2. Add (or update) the query string so it includes **`connection_limit`**:
+   - If the URL has **no** `?` yet, append: **`?connection_limit=10`**
+   - If it already has query params (e.g. `?pgbouncer=true`), add: **`&connection_limit=10`**
+3. Example (Supabase pooler):
+   ```
+   postgresql://postgres.[ref]:[password]@aws-0-us-east-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=10
+   ```
+4. Redeploy so the new `DATABASE_URL` is used.
+
+A value of **10** is usually enough for cron + logger. If you still see timeouts, try **15**. Do not set it very high (e.g. 50) on Vercel, or the total connections across all instances may exceed your database/pooler limit.
