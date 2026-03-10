@@ -15,8 +15,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing adminKey query parameter' }, { status: 400 })
   }
 
-  if (!adminKey.startsWith('sk-ant-admin-')) {
-    if (adminKey.startsWith('sk-ant-api-')) {
+  // Accept sk-ant-admin, sk-ant-admin-, sk-ant-admin01-, etc. (reject sk-ant-api-)
+  const isAdminKey = adminKey.startsWith('sk-ant-admin')
+  const isRegularKey = adminKey.startsWith('sk-ant-api-')
+  if (!isAdminKey) {
+    if (isRegularKey) {
       console.log('[CONNECT:ANTHROPIC:WORKSPACES] Response: 400 Regular API key (sk-ant-api-) not Admin')
       return NextResponse.json(
         {
@@ -28,7 +31,7 @@ export async function GET(req: NextRequest) {
     }
     console.log('[CONNECT:ANTHROPIC:WORKSPACES] Response: 400 Invalid key prefix')
     return NextResponse.json(
-      { error: 'Admin key must start with sk-ant-admin-' },
+      { error: 'Admin key must start with sk-ant-admin (e.g. sk-ant-admin- or sk-ant-admin01-)' },
       { status: 400 }
     )
   }

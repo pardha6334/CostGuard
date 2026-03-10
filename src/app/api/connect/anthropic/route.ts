@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
 
   const { adminKey, workspaceId, displayName, hourlyLimit, dailyBudget } = parsed.data
 
-  if (!adminKey.startsWith('sk-ant-admin-')) {
+  const isAdminKey = adminKey.startsWith('sk-ant-admin')
+  if (!isAdminKey) {
     if (adminKey.startsWith('sk-ant-api-')) {
       return NextResponse.json(
         {
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
       )
     }
     return NextResponse.json(
-      { error: 'Admin key must start with sk-ant-admin-' },
+      { error: 'Admin key must start with sk-ant-admin (e.g. sk-ant-admin- or sk-ant-admin01-)' },
       { status: 400 }
     )
   }

@@ -1,7 +1,7 @@
 'use client'
 // src/components/platforms/ConnectWizard.tsx
 // CostGuard — 3-step modal: Select provider → Credentials → Thresholds
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -96,17 +96,51 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
   const [anthropicSuccess, setAnthropicSuccess] = useState<{ workspaceName: string; keyCount: number } | null>(null)
 
   const adminKey = credentials.adminKey ?? ''
-  const isAnthropicAdminKey = adminKey.startsWith('sk-ant-admin-')
+  const isAnthropicAdminKey = adminKey.startsWith('sk-ant-admin')
   const isWrongAnthropicKey = adminKey.length > 10 && adminKey.startsWith('sk-ant-api-')
 
+  const fetchWorkspaces = useCallback(() => {
+    if (selectedProvider !== 'ANTHROPIC' || !adminKey.trim() || !adminKey.startsWith('sk-ant-admin')) return
+    setLoadingWorkspaces(true)
+    setWorkspacesError(null)
+    setWorkspacesListError(null)
+    fetch(`/api/connect/anthropic/workspaces?adminKey=${encodeURIComponent(adminKey)}`)
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}))
+        return { ok: r.ok, data }
+      })
+      .then(({ ok, data }) => {
+        if (!ok || data?.error) {
+          setWorkspacesError(typeof data?.error === 'string' ? data.error : 'Failed to load workspaces')
+          setAnthropicWorkspaces([])
+          setWorkspacesListError(null)
+        } else if (Array.isArray(data.workspaces)) {
+          setAnthropicWorkspaces(data.workspaces)
+          setWorkspacesError(null)
+          setWorkspacesListError(data.list_error ?? null)
+        } else {
+          setAnthropicWorkspaces([])
+          setWorkspacesListError(null)
+        }
+      })
+      .catch(() => {
+        setAnthropicWorkspaces([])
+        setWorkspacesError('Failed to load workspaces')
+        setWorkspacesListError(null)
+      })
+      .finally(() => setLoadingWorkspaces(false))
+  }, [selectedProvider, adminKey])
+
   useEffect(() => {
-    if (selectedProvider !== 'ANTHROPIC' || !isAnthropicAdminKey || adminKey.length < 30) {
+    const minKeyLen = 13 // "sk-ant-admin".length — trigger for sk-ant-admin, sk-ant-admin01-, etc.
+    if (selectedProvider !== 'ANTHROPIC' || !isAnthropicAdminKey || adminKey.length < minKeyLen) {
       setAnthropicWorkspaces([])
       setWorkspacesError(null)
       setWorkspacesListError(null)
       return
     }
     let cancelled = false
+    if (typeof window !== 'undefined') console.log('[ConnectWizard] Fetching Anthropic workspaces (key length:', adminKey.length, ')')
     setLoadingWorkspaces(true)
     setWorkspacesError(null)
     setWorkspacesListError(null)
@@ -264,6 +298,7 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
         >
           ✕
         </button>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
         <div
           style={{
@@ -476,6 +511,11 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
                     placeholder={field.placeholder}
                     value={credentials[field.name] ?? ''}
                     onChange={(e) => handleCredentialChange(field.name, e.target.value)}
+                    onBlur={() => {
+                      if (selectedProvider === 'ANTHROPIC' && field.name === 'adminKey' && credentials.adminKey?.trim() && credentials.adminKey.startsWith('sk-ant-admin')) {
+                        fetchWorkspaces()
+                      }
+                    }}
                     style={{
                       ...inputStyle,
                       borderColor: credErrors[field.name] ? 'var(--kill)' : 'var(--border)',
@@ -486,33 +526,46 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
                       {credErrors[field.name]}
                     </div>
                   )}
+                  {selectedProvider === 'ANTHROPIC' && field.name === 'adminKey' && workspacesError && (
+                    <div style={{ color: 'var(--kill)', fontSize: '11px', marginTop: '6px', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)' }}>
+                      {workspacesError}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
             {selectedProvider === 'ANTHROPIC' && (
               <div style={{ marginBottom: '20px' }}>
                 <label style={labelStyle}>Select Workspace to Monitor</label>
+                {loadingWorkspaces && (
+                  <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', fontSize: '12px', color: 'var(--cyan)' }}>
+                    <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid var(--border)', borderTopColor: 'var(--cyan)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    Loading workspaces…
+                  </div>
+                )}
                 <select
                   value={credentials.workspaceId ?? ''}
                   onChange={(e) => handleCredentialChange('workspaceId', e.target.value)}
+                  onFocus={() => {
+                    if (adminKey.trim() && isAnthropicAdminKey && !loadingWorkspaces && anthropicWorkspaces.length === 0) {
+                      fetchWorkspaces()
+                    }
+                  }}
+                  disabled={loadingWorkspaces}
                   style={{
                     ...inputStyle,
                     borderColor: credErrors.workspaceId ? 'var(--kill)' : 'var(--border)',
-                    cursor: 'pointer',
+                    cursor: loadingWorkspaces ? 'wait' : 'pointer',
+                    opacity: loadingWorkspaces ? 0.8 : 1,
                   }}
                 >
-                  <option value="">{loadingWorkspaces ? 'Loading workspaces...' : '— Select workspace —'}</option>
+                  <option value="">{loadingWorkspaces ? 'Loading workspaces…' : '— Select workspace —'}</option>
                   {anthropicWorkspaces.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.name}
                     </option>
                   ))}
                 </select>
-                {workspacesError && (
-                  <div style={{ color: 'var(--kill)', fontSize: '10px', marginTop: '6px', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)' }}>
-                    {workspacesError}
-                  </div>
-                )}
                 {workspacesListError && (
                   <div style={{ marginTop: '6px' }}>
                     <div style={{ color: 'var(--warn)', fontSize: '10px', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)' }}>
