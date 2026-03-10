@@ -181,9 +181,10 @@ export class AnthropicAdapter implements PlatformAdapter {
     let afterId: string | null = null;
 
     do {
-      const path =
-        '/v1/organizations/workspaces' +
-        (afterId ? `?after_id=${encodeURIComponent(afterId)}` : '');
+      const params = new URLSearchParams();
+      params.set('limit', '100');
+      if (afterId) params.set('after_id', afterId);
+      const path = `/v1/organizations/workspaces?${params.toString()}`;
       const res = (await this.anthropicFetch<{
         data?: AnthropicWorkspace[];
         has_more?: boolean;

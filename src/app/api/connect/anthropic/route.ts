@@ -66,12 +66,16 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  const workspace = workspaces.find((w) => w.id === workspaceId)
-  if (!workspace) {
+  // __org__ = monitor entire organization (no workspace filter)
+  const isOrgLevel = workspaceId === '__org__'
+  const workspace = isOrgLevel ? null : workspaces.find((w) => w.id === workspaceId)
+  if (!isOrgLevel && !workspace) {
     return NextResponse.json({ error: 'Workspace not found' }, { status: 400 })
   }
 
-  const workspaceAdapter = new AnthropicAdapter(adminKey, workspaceId)
+  const effectiveWorkspaceId = isOrgLevel ? null : workspace?.id ?? null
+  const effectiveWorkspaceName = isOrgLevel ? 'Entire organization' : (workspace?.name ?? 'Workspace')
+  const workspaceAdapter = new AnthropicAdapter(adminKey, effectiveWorkspaceId)
   const activeKeys = await workspaceAdapter.listActiveApiKeys()
   const keyCount = activeKeys.length
 
@@ -80,9 +84,9 @@ export async function POST(req: NextRequest) {
       userId: user.id,
       provider: 'ANTHROPIC',
       encryptedCreds: encrypt(JSON.stringify({ adminKey })),
-      workspaceId: workspace.id,
-      workspaceName: workspace.name,
-      displayName: displayName ?? workspace.name,
+      workspaceId: effectiveWorkspaceId,
+      workspaceName: effectiveWorkspaceName,
+      displayName: displayName ?? effectiveWorkspaceName,
       breakerState: 'CLOSED',
       hourlyLimit: hourlyLimit ?? 200,
       dailyBudget: dailyBudget ?? 500,

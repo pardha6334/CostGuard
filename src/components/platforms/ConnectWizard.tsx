@@ -91,6 +91,8 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
   const [anthropicWorkspaces, setAnthropicWorkspaces] = useState<AnthropicWorkspaceOption[]>([])
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(false)
   const [workspacesError, setWorkspacesError] = useState<string | null>(null)
+  const [workspacesListError, setWorkspacesListError] = useState<string | null>(null)
+  const [workspacesRetry, setWorkspacesRetry] = useState(0)
   const [anthropicSuccess, setAnthropicSuccess] = useState<{ workspaceName: string; keyCount: number } | null>(null)
 
   const adminKey = credentials.adminKey ?? ''
@@ -101,11 +103,13 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
     if (selectedProvider !== 'ANTHROPIC' || !isAnthropicAdminKey || adminKey.length < 30) {
       setAnthropicWorkspaces([])
       setWorkspacesError(null)
+      setWorkspacesListError(null)
       return
     }
     let cancelled = false
     setLoadingWorkspaces(true)
     setWorkspacesError(null)
+    setWorkspacesListError(null)
     fetch(`/api/connect/anthropic/workspaces?adminKey=${encodeURIComponent(adminKey)}`)
       .then(async (r) => {
         const data = await r.json().catch(() => ({}))
@@ -116,24 +120,28 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
         if (!ok || data?.error) {
           setWorkspacesError(typeof data?.error === 'string' ? data.error : 'Failed to load workspaces')
           setAnthropicWorkspaces([])
+          setWorkspacesListError(null)
         } else if (Array.isArray(data.workspaces)) {
           setAnthropicWorkspaces(data.workspaces)
           setWorkspacesError(null)
+          setWorkspacesListError(data.list_error ?? null)
         } else {
           setAnthropicWorkspaces([])
+          setWorkspacesListError(null)
         }
       })
       .catch(() => {
         if (!cancelled) {
           setAnthropicWorkspaces([])
           setWorkspacesError('Failed to load workspaces')
+          setWorkspacesListError(null)
         }
       })
       .finally(() => {
         if (!cancelled) setLoadingWorkspaces(false)
       })
     return () => { cancelled = true }
-  }, [selectedProvider, adminKey, isAnthropicAdminKey])
+  }, [selectedProvider, adminKey, isAnthropicAdminKey, workspacesRetry])
 
   const { register, handleSubmit, formState: { errors } } = useForm<ThresholdsForm>({
     resolver: zodResolver(thresholdsSchema),
@@ -503,6 +511,25 @@ export default function ConnectWizard({ onClose, onSuccess }: ConnectWizardProps
                 {workspacesError && (
                   <div style={{ color: 'var(--kill)', fontSize: '10px', marginTop: '6px', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)' }}>
                     {workspacesError}
+                  </div>
+                )}
+                {workspacesListError && (
+                  <div style={{ marginTop: '6px' }}>
+                    <div style={{ color: 'var(--warn)', fontSize: '10px', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)' }}>
+                      Could not list workspaces: {workspacesListError} You can still connect at organization level using Default below.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setWorkspacesRetry((r) => r + 1)}
+                      style={{ marginTop: '6px', fontSize: '10px', color: 'var(--cyan)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)', textDecoration: 'underline' }}
+                    >
+                      Retry loading workspaces
+                    </button>
+                  </div>
+                )}
+                {anthropicWorkspaces.length === 1 && anthropicWorkspaces[0].id === '__org__' && !workspacesListError && (
+                  <div style={{ color: 'var(--muted)', fontSize: '10px', marginTop: '6px', fontFamily: 'var(--font-share-tech-mono, Share Tech Mono)' }}>
+                    No workspaces found. Default monitors all API keys in your organization.
                   </div>
                 )}
                 {credErrors.workspaceId && (

@@ -32,12 +32,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: validation.error ?? 'Invalid admin key' }, { status: 400 })
   }
 
-  const workspaces = await adapter.listWorkspaces()
-  return NextResponse.json({
-    workspaces: workspaces.map((w) => ({
+  let workspaces: Array<{ id: string; name: string; display_color: string }>
+  let listError: string | null = null
+  try {
+    const list = await adapter.listWorkspaces()
+    workspaces = list.map((w) => ({
       id: w.id,
       name: w.name,
-      display_color: w.display_color,
-    })),
-  })
+      display_color: w.display_color ?? '#666666',
+    }))
+    // If no workspaces (e.g. individual account or API returned empty), allow org-level connection
+    if (workspaces.length === 0) {
+      workspaces = [{ id: '__org__', name: 'Default (entire organization)', display_color: '#666666' }]
+      listError = 'No workspaces returned by API.'
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    listError = msg
+    console.error('[CONNECT:ANTHROPIC:WORKSPACES] listWorkspaces failed:', msg)
+    // Still offer org-level option so user can connect
+    workspaces = [{ id: '__org__', name: 'Default (entire organization)', display_color: '#666666' }]
+  }
+
+  return NextResponse.json({ workspaces, list_error: listError })
 }
