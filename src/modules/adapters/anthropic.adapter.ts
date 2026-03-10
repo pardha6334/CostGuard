@@ -107,6 +107,10 @@ export class AnthropicAdapter implements PlatformAdapter {
     options?: RequestInit
   ): Promise<T> {
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
+    const isWorkspaces = path.includes('workspaces');
+    if (isWorkspaces) {
+      console.log('[ANTHROPIC:FETCH] Request', { path, url, method: options?.method ?? 'GET' });
+    }
     const maxRetries = 4;
     let lastErr: Error | null = null;
 
@@ -117,11 +121,19 @@ export class AnthropicAdapter implements PlatformAdapter {
           headers: { ...this.headers, ...options?.headers },
         });
 
+        if (isWorkspaces) {
+          console.log('[ANTHROPIC:FETCH] Response', { path, status: res.status, ok: res.ok });
+        }
+
         if (res.status === 401) {
+          if (isWorkspaces) console.error('[ANTHROPIC:FETCH] 401 Unauthorized');
           throw new Error('Invalid admin key');
         }
         if (res.status === 403) {
-          throw new Error('Admin role required');
+          const body = await res.text();
+          const bodyPreview = body.length > 400 ? `${body.slice(0, 400)}...` : body;
+          console.error('[ANTHROPIC:FETCH] 403 Forbidden', { path, body: bodyPreview });
+          throw new Error(`Admin role required: ${bodyPreview}`);
         }
         if (res.status === 429) {
           const delay = Math.min(1000 * 2 ** attempt, 8000);
@@ -135,12 +147,19 @@ export class AnthropicAdapter implements PlatformAdapter {
 
         if (!res.ok) {
           const text = await res.text();
+          const bodyPreview = text.length > 400 ? `${text.slice(0, 400)}...` : text;
+          console.error('[ANTHROPIC:FETCH] Non-OK', { path, status: res.status, body: bodyPreview });
           throw new Error(`Anthropic API ${res.status}: ${text}`);
         }
 
         const contentType = res.headers.get('content-type');
         if (contentType?.includes('application/json')) {
-          return (await res.json()) as T;
+          const json = (await res.json()) as T;
+          if (isWorkspaces && json && typeof json === 'object' && 'data' in json) {
+            const data = (json as { data?: unknown[] }).data;
+            console.log('[ANTHROPIC:FETCH] Success JSON', { path, dataLength: data?.length ?? 0, has_more: (json as { has_more?: boolean }).has_more });
+          }
+          return json;
         }
         return undefined as T;
       } catch (e) {
@@ -177,10 +196,13 @@ export class AnthropicAdapter implements PlatformAdapter {
   }
 
   async listWorkspaces(): Promise<AnthropicWorkspace[]> {
+    console.log('[ANTHROPIC:WORKSPACES] listWorkspaces() start');
     const all: AnthropicWorkspace[] = [];
     let afterId: string | null = null;
+    let pageNum = 0;
 
     do {
+      pageNum++;
       const params = new URLSearchParams();
       params.set('limit', '100');
       if (afterId) params.set('after_id', afterId);
@@ -192,10 +214,12 @@ export class AnthropicAdapter implements PlatformAdapter {
       }>(path)) as { data?: AnthropicWorkspace[]; has_more?: boolean; last_id?: string };
       const page = res.data ?? [];
       const active = page.filter((w) => !w.archived_at);
+      console.log('[ANTHROPIC:WORKSPACES] page', { pageNum, rawLength: page.length, activeLength: active.length, has_more: res.has_more, names: active.map((w) => w.name) });
       all.push(...active);
       afterId = res.has_more && res.last_id ? res.last_id : null;
     } while (afterId);
 
+    console.log('[ANTHROPIC:WORKSPACES] listWorkspaces() done', { total: all.length, ids: all.map((w) => w.id) });
     return all;
   }
 
